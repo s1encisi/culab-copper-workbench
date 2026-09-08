@@ -1,0 +1,164 @@
+from __future__ import annotations
+
+import json
+import os
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Literal
+from urllib.parse import urlparse
+
+import pandas as pd
+from fastapi import FastAPI, Query, Request
+from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.staticfiles import StaticFiles
+
+from copper_mvp.common import APP_VERSION, DEFAULT_RUNS_DIR, EVIDENCE_DIR, PROJECT_ROOT, WorkbenchError, dumps, safe
+from copper_mvp.contracts import AgentDiagnosticRequest, ExplanationRequest, RunRequest, SelectionRequest
+from copper_mvp.data import DataRepository
+from copper_mvp.workflows import Workbench
+
+
+def create_app(run_dir: Path | None = None, data: DataRepository | None = None) -> FastAPI:
+    @asynccontextmanager
+    async def lifespan(app):
+        app.state.workbench = Workbench(run_dir or Path(os.environ.get("COPPER_MVP_RUN_DIR", str(DEFAULT_RUNS_DIR))), data=data)
+        yield
+        app.state.workbench.close()
+
+    app = FastAPI(title="CuLab 本地研究工作台", version=APP_VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+    def workbench(request: Request) -> Workbench:
+        return request.app.state.workbench
+
+    @app.exception_handler(WorkbenchError)
+    async def domain_error(request, exc):
+        status = 409 if exc.code in ("REQUEST_CONFLICT", "CALL_ALREADY_RESERVED") else 404 if exc.code.endswith("NOT_FOUND") else 400
+        return JSONResponse(status_code=status, content={"error": {"code": exc.code, "message": str(exc)}})
+
+    @app.middleware("http")
+    async def local_origin(request, call_next):
+        origin = request.headers.get("origin")
+        if origin and urlparse(origin).hostname not in ("localhost", "127.0.0.1", "::1"):
+            return JSONResponse(status_code=403, content={"error": {"code": "LOCAL_ONLY", "message": "此工作台在本机使用"}})
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response
+
+    @app.get("/api/health")
+    def health(request: Request):
+        wb = workbench(request)
+        return {"status": "ready", "version": APP_VERSION, "local_only": True, "llm_enabled": wb.explanations.enabled, "models_ready": bool(wb.models.catalog()), "dataset_version": wb.data.dataset_version}
+
+    @app.get("/api/overview")
+    def overview(request: Request):
+        wb = workbench(request)
+        return {**wb.data.overview(), "models": wb.models.catalog(), "recent_runs": wb.store.list(limit=6)}
+
+    @app.get("/api/diagnostic-agent")
+    def diagnostic_agent(request: Request):
+        return workbench(request).diagnostic_agent.availability()
+
+    @app.post("/api/runs/{run_id}/diagnoses", status_code=202)
+    def create_diagnosis(request: Request, run_id: str, payload: AgentDiagnosticRequest):
+        return workbench(request).submit_diagnosis(run_id, payload)
+
+    @app.get("/api/runs/{run_id}/diagnoses")
+    def diagnoses(request: Request, run_id: str):
+        return {"items": workbench(request).store.diagnoses(run_id)}
+
+    @app.get("/api/events")
+    def events(request: Request, year: int | None = None, query: str = "", scope: Literal["all", "oof", "dual"] = "all", offset: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=100)):
+        return workbench(request).data.events(year, query[:120], scope, offset, limit)
+
+    @app.get("/api/events/{event_id}")
+    def event(request: Request, event_id: str):
+        return workbench(request).data.context(event_id)
+
+    @app.get("/api/models")
+    def models(request: Request):
+        return {"items": workbench(request).models.catalog(), "presets": ["Persistence", "DeltaRidge", "DeltaHGB"]}
+
+    @app.get("/api/models/{bundle_id}/series")
+    def model_series(request: Request, bundle_id: str, target: Literal["cu", "as"] = "cu"):
+        return {"items": workbench(request).models.series(bundle_id, target)}
+
+    @app.get("/api/experiments")
+    def experiments(request: Request):
+        history = []
+        for name, subfolder in (("P2 历史基线", "baselines_v1"), ("P2.1 历史变化量", "residual_baselines_v1")):
+            path = EVIDENCE_DIR / "artifacts/p2" / subfolder / "overall_metrics_v1.csv"
+            if path.is_file():
+                rows = pd.read_csv(path)
+                history.extend({"experiment": name, "model": r.model_name, "target": "cu" if r.target_name == "target_cu_g_l" else "as", "n": r.validation_sample_count, "mae": r.pooled_mae, "rmse": r.pooled_rmse, "r2": r.pooled_r2, "run_id": r.run_id, "source": str(path.relative_to(EVIDENCE_DIR))} for r in rows.itertuples())
+        return safe({"history": history, "bundles": workbench(request).models.catalog()})
+
+    @app.post("/api/runs", status_code=202)
+    def create_run(request: Request, payload: RunRequest):
+        return workbench(request).submit(payload)
+
+    @app.get("/api/runs")
+    def runs(request: Request, task_type: str | None = None, limit: int = Query(100, ge=1, le=200)):
+        return {"items": workbench(request).store.list(task_type, limit)}
+
+    @app.get("/api/runs/{run_id}")
+    def run(request: Request, run_id: str):
+        return workbench(request).store.get(run_id)
+
+    @app.post("/api/runs/{run_id}/selection")
+    def selection(request: Request, run_id: str, payload: SelectionRequest):
+        wb = workbench(request)
+        wb.store.select(run_id, payload.candidate_id, payload.label)
+        return wb.store.get(run_id)
+
+    @app.post("/api/runs/{run_id}/explanation")
+    def explanation(request: Request, run_id: str, payload: ExplanationRequest):
+        return workbench(request).explanations.explain(run_id, payload.question, payload.use_llm)
+
+    @app.get("/api/runs/{run_id}/export")
+    def export(request: Request, run_id: str, format: Literal["json", "csv", "md"] = "md"):
+        wb = workbench(request)
+        item = wb.store.get(run_id)
+        result = item.get("result") or {}
+        headers = {"Content-Disposition": f'attachment; filename="copper-{run_id}.{format}"'}
+        if format == "json":
+            return Response(dumps(item), media_type="application/json", headers=headers)
+        if format == "csv":
+            path = wb.store.directory(run_id) / "pareto_candidates.csv"
+            if result.get("kind") == "optimization" and path.is_file():
+                return FileResponse(path, media_type="text/csv", headers=headers)
+            if result.get("kind") == "training":
+                rows = result.get("metrics", [])
+            elif result.get("kind") == "prediction":
+                rows = [{"target": k, **v} for k, v in result.get("predictions", {}).items()]
+            elif result.get("kind") == "agent_diagnosis":
+                rows = result.get("steps", [])
+            else:
+                rows = [{"run_id": run_id, "task_type": item["task_type"], "status": item["status"], "solution_status": result.get("solution_status"), "code": result.get("code") or (item.get("error") or {}).get("code"), "message": result.get("message") or (item.get("error") or {}).get("message")}]
+            return Response(pd.DataFrame(rows).to_csv(index=False), media_type="text/csv; charset=utf-8", headers=headers)
+        from copper_mvp.explanation import template
+        text = f"# CuLab 运行摘要\n\n运行编号：{run_id}\n\n任务：{item['task_type']}\n\n状态：{item['status']}\n\n"
+        if result.get("kind") == "agent_diagnosis":
+            report = result.get("report") or {}
+            text += report.get("summary", (item.get("error") or {}).get("message", "诊断进行中"))
+            for finding in report.get("findings", []):
+                text += "\n\n- " + finding["claim"] + " [" + ", ".join(finding["evidence_ids"]) + "]"
+        elif item["status"] == "completed":
+            text += template(item, "summary")["text"]
+        elif item["error"]:
+            text += item["error"]["message"]
+        text += "\n\n## 计算结果\n\n```json\n" + json.dumps(result, ensure_ascii=False, indent=2) + "\n```\n"
+        return Response(text, media_type="text/markdown; charset=utf-8", headers=headers)
+
+    dist = PROJECT_ROOT / "web/dist"
+    app.mount("/assets", StaticFiles(directory=dist / "assets", check_dir=False), name="assets")
+
+    @app.get("/{path:path}")
+    def frontend(path: str):
+        if path.startswith("api/"):
+            return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND", "message": "没有该接口"}})
+        index = dist / "index.html"
+        if index.is_file():
+            return FileResponse(index)
+        return JSONResponse({"message": "后端已就绪，请构建 web 前端后刷新。", "api_schema": "/openapi.json"})
+
+    return app

@@ -1,0 +1,3 @@
+# Preserve exact file bytes: frozen contracts and source are verified by SHA-256.
+# Disabling text conversion keeps Windows worktree checkouts identical to the baseline.
+* -text

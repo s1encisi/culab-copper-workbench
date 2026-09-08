@@ -1,0 +1,6 @@
+#!/bin/sh
+# Prefer the prepared project interpreter; use PATH Python in other clones.
+if [ -x ../.analysis_work/venvs/copper-mvp/Scripts/python.exe ]; then
+    exec ../.analysis_work/venvs/copper-mvp/Scripts/python.exe -X utf8 -B scripts/check_git_upload.py --pre-push "$@"
+fi
+exec python -B scripts/check_git_upload.py --pre-push "$@"

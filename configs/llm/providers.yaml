@@ -1,0 +1,64 @@
+schema_version: 1
+live_calls_default: false
+data_policy:
+  allow_raw_excel: false
+  allow_row_level_plant_data: false
+  allow_secrets_in_payload: false
+  cross_provider_exchange: validated_structured_artifacts_only
+
+providers:
+  kimi_orchestrator:
+    provider: moonshot
+    model_env: KIMI_MODEL
+    model_default: kimi-k3
+    api_key_env: KIMI_API_KEY
+    base_url_env: KIMI_BASE_URL
+    base_url_default: https://api.moonshot.cn/v1
+    allowed_base_urls:
+      - https://api.moonshot.cn/v1
+      - https://api.moonshot.ai/v1
+    api_style: chat_completions
+    structured_output: strict_json_schema
+    reasoning_effort: high
+    max_completion_tokens: 2048
+    max_calls_per_run: 2
+    pricing:
+      source_currency: CNY
+      source_input_per_million_tokens: 20.0
+      source_output_per_million_tokens: 100.0
+      usd_to_cny_upper_bound: null
+      input_cny_per_million_tokens: 20.0
+      output_cny_per_million_tokens: 100.0
+      basis: official_conservative_non_cached_rate_frozen_2026_08_27
+
+  deepseek_executor:
+    provider: deepseek
+    model_env: DEEPSEEK_MODEL
+    model_default: deepseek-v4-pro
+    api_key_env: DEEPSEEK_API_KEY
+    base_url_env: DEEPSEEK_BASE_URL
+    base_url_default: https://api.deepseek.com
+    allowed_base_urls:
+      - https://api.deepseek.com
+    api_style: chat_completions
+    structured_output: json_object_then_pydantic_validate
+    thinking: enabled
+    reasoning_effort: high
+    max_completion_tokens: 4096
+    max_calls_per_run: 4
+    pricing:
+      source_currency: USD
+      source_input_per_million_tokens: 1.32
+      source_output_per_million_tokens: 3.96
+      usd_to_cny_upper_bound: 7.5
+      input_cny_per_million_tokens: 9.9
+      output_cny_per_million_tokens: 29.7
+      basis: official_peak_rate_times_frozen_fx_upper_bound_2026_08_27
+
+budgets:
+  max_calls_per_run: 6
+  max_cny_per_run: 30.0
+  max_repair_attempts: 1
+  max_tool_rounds: 4
+  max_wall_seconds: 600
+  monthly_cny_limit: 300.0

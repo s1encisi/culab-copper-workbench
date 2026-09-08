@@ -1,0 +1,127 @@
+graph_id: COPPER_MAS_A1_A5_V1
+contract_id: DHC_EVENT_SEQUENCE_V2_20260826
+status: frozen_offline_graph_live_llm_locked
+research_mode: historical_offline_only
+
+freeze_basis:
+  frozen_on: 2026-08-26
+  development_workflow_benchmark: artifacts/p3/development_benchmark_v1/run_manifest_v1.json
+  fault_injection_benchmark: artifacts/p3/fault_injection_v1/run_manifest_v1.json
+  external_2026_read_for_graph_design: false
+  llm_live_calls_used_for_graph_design: false
+  note: 图结构与安全规则已冻结；人工抽核只决定是否释放外部评价，不得回改图结构
+
+numeric_model_freeze:
+  selection_manifest: contracts/frozen/selected_model_manifest_v1.json
+  selection_id: A4_FINAL_SELECTION_V1_20260826
+  cu_model: Persistence
+  as_model: Persistence
+  model_id: PERSISTENCE_CURRENT_RESULT_V1
+  external_2026_used_for_selection: false
+
+orchestrator:
+  provider_ref: kimi_orchestrator
+  model_role: workflow_orchestration_only
+  allowed_inputs:
+    - artifact_id
+    - schema_version
+    - pass_fail_status
+    - reason_codes
+    - bounded_aggregate_metadata
+  forbidden_inputs:
+    - raw_excel
+    - row_level_plant_data
+    - external_test_outcomes_before_freeze
+    - api_keys
+  cannot_override:
+    - temporal_contract
+    - leakage_gate
+    - frozen_model_selection
+    - numeric_prediction
+    - audit_failure
+
+agents:
+  A1:
+    name: 数据准入与时间对齐
+    primary_engine: deterministic_python
+    llm_required: false
+    inputs: [source_manifest, timing_contract_v2, normalized_facts]
+    outputs: [AsOfAdmissionCardV2, ObservationCardV2, DatasetManifestV2]
+    failure_policy: fail_closed
+    implementation_status: p1_dataset_and_runtime_gate_ready
+
+  A2:
+    name: 工况识别与证据
+    primary_engine: deterministic_rules_and_classifier
+    optional_executor: deepseek_executor
+    llm_required: false
+    inputs: [ForecastRequestV2]
+    outputs: [ProcessModeCardV2]
+    llm_scope: 仅把脱敏后的规则证据整理为结构化说明，不得更改数值工况判定
+    failure_policy: retain_deterministic_result_and_warn
+    implementation_status: deterministic_mode_card_ready
+
+  A3:
+    name: 模型实验与冻结
+    primary_engine: sklearn_pipeline
+    optional_executor: deepseek_executor
+    llm_required: false
+    inputs: [development_dataset, cv_fold_manifest_v2, experiment_allowlist]
+    outputs: [ExperimentLedgerV2, ModelAdmissionCardV2, FrozenModelBundleV2]
+    llm_scope: 只执行预先允许的实验任务说明；训练、调参、指标和选择由确定性代码完成
+    external_test_access: forbidden_before_freeze
+    failure_policy: no_model_promotion
+    implementation_status: preregistered_selection_complete_persistence_frozen
+
+  A4:
+    name: Cu和As预测及不确定性
+    primary_engine: frozen_numeric_model
+    llm_required: false
+    inputs: [ForecastRequestV2, ProcessModeCardV2, FrozenModelBundleV2]
+    outputs: [PredictionCardV2]
+    failure_policy: abstain
+    implementation_status: persistence_and_hash_verified_candidate_loader_ready
+
+  A5:
+    name: 独立审计
+    primary_engine: deterministic_audit_rules
+    optional_executor: deepseek_executor
+    llm_required: false
+    inputs: [all_artifact_manifests, all_cards, resource_ledger]
+    outputs: [AuditCardV2, ComparisonReportV2]
+    llm_scope: 只整理已经计算出的审计证据，不得把失败改为通过
+    failure_policy: block_release
+    implementation_status: runtime_audit_resource_ledger_and_fault_guards_frozen
+
+external_llm_boundary:
+  only_validated_json: true
+  pydantic_extra_policy: forbid
+  raw_chat_history_cross_provider: false
+  reasoning_content_persisted: false
+  row_level_data_allowed: false
+  numeric_model_training_allowed: false
+
+comparison_requirement:
+  arms:
+    - deterministic_fixed_workflow
+    - single_llm_agent
+    - multi_agent_graph
+  shared_constraints:
+    - same_development_data
+    - same_external_holdout
+    - same_frozen_numeric_predictor
+    - same_call_and_token_budget
+  report_metrics:
+    - cu_mae
+    - as_mae
+    - cu_rmse
+    - as_rmse
+    - interval_coverage
+    - abstention_rate
+    - failure_rate
+    - p50_latency_ms
+    - p95_latency_ms
+    - total_calls
+    - input_tokens
+    - output_tokens
+    - estimated_cost_cny
