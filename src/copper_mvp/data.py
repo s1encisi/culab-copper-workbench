@@ -10,7 +10,7 @@ import pandas as pd
 import yaml
 
 from copper_mas.agents.mode import infer_process_mode
-from copper_mvp.common import DATA_DIR, EVIDENCE_DIR, PROJECT_ROOT, WorkbenchError, digest, file_hash, safe
+from copper_mvp.common import LocalDataPaths, WorkbenchError, digest, file_hash, safe
 
 SUFFIXES = ("__t_minus_0h", "__mean_12h", "__slope_per_h_12h", "__valid_count_12h")
 TARGETS = ("cu", "as")
@@ -32,10 +32,18 @@ def truthy(series: pd.Series) -> pd.Series:
 
 
 class DataRepository:
-    def __init__(self, data_dir: Path = DATA_DIR, evidence_dir: Path = EVIDENCE_DIR):
-        self.data_dir = Path(data_dir)
-        self.evidence_dir = Path(evidence_dir)
-        config_path = PROJECT_ROOT / "configs/contracts/core_features_v2.yaml"
+    def __init__(self, data_dir: Path | None = None, evidence_dir: Path | None = None, *, contract_dir: Path | None = None, label_dir: Path | None = None):
+        self.paths = LocalDataPaths.resolve(data_dir, evidence_dir, contract_dir, label_dir)
+        self.data_dir = self.paths.data_dir
+        self.evidence_dir = self.paths.evidence_dir
+        self.label_dir = self.paths.label_dir
+        sources = self.paths.sources()
+        required = ("features", "admissions", "index", "folds", "feature_contract")
+        missing = [name for name in required if not sources[name].is_file()]
+        if missing:
+            raise WorkbenchError("缺少本地数据依赖: " + ", ".join(missing), "LOCAL_DATA_MISSING")
+        self.source_hashes = {name: file_hash(sources[name]) for name in required}
+        config_path = sources["feature_contract"]
         config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         self.signals = [dict(v, group=g) for g, group in config["groups"].items() for v in group["features"].values()]
         self.tags = [s["tag"] for s in self.signals]
@@ -74,6 +82,8 @@ class DataRepository:
         self.X = pd.DataFrame(np.column_stack((numeric.to_numpy(float), np.array(categories))), index=self.frame.index, columns=self.feature_columns)
         self.summaries = [self._summary(event_id) for event_id in self.frame.index]
         self._targets = None
+        if any(file_hash(sources[name]) != value for name, value in self.source_hashes.items()):
+            raise WorkbenchError("装配期间数据来源发生变化，请重新加载", "SOURCE_CHANGED")
 
     def row(self, event_id: str) -> pd.Series:
         if event_id not in self.frame.index:
@@ -122,7 +132,16 @@ class DataRepository:
 
     def training_data(self) -> tuple[pd.DataFrame, pd.DataFrame]:
         if self._targets is None:
-            folder = self.evidence_dir / "artifacts/p1/development_2024_2025"
+            folder = self.label_dir
+            pair_times = pd.read_csv(folder / "event_pair_index_v2.csv", usecols=["pair_id", "target_available_at"]).set_index("pair_id")
+            if pair_times.index.duplicated().any():
+                raise WorkbenchError("标签配对身份重复", "LABEL_JOIN")
+            available_times = pd.to_datetime(pair_times.target_available_at, errors="raise")
+            if not available_times.dropna().dt.year.isin((2024, 2025)).all():
+                raise WorkbenchError("标签来源越过开发数据年份边界", "DATA_PERIOD")
+            primary_available = available_times.loc[self.primary_index.pair_id]
+            if primary_available.isna().any() or primary_available.max() > self.frame.decision_at.max():
+                raise WorkbenchError("全开发期标签缺少可得时间或晚于拟合截止", "TEMPORAL_SPLIT")
             outcomes = pd.read_csv(folder / "outcome_ledger_v2.csv", usecols=["pair_id", "target_cu_g_l", "target_as_mg_l"])
             joined = self.primary_index.merge(outcomes, on="pair_id", validate="one_to_one").set_index("origin_event_id")
             if len(joined) != len(self.primary_ids):
@@ -131,13 +150,13 @@ class DataRepository:
             targets.columns = list(TARGETS)
             if not np.isfinite(targets.to_numpy()).all():
                 raise WorkbenchError("开发标签含无效数值", "LABEL_VALUES")
-            pair_times = pd.read_csv(folder / "event_pair_index_v2.csv", usecols=["pair_id", "target_recorded_at"]).set_index("pair_id")
             for fold_id in sorted(self.cv.fold_id.unique()):
                 rows = self.cv[self.cv.fold_id.eq(fold_id)]
                 train = rows[rows.fold_role.eq("TRAIN")]
                 valid = rows[rows.fold_role.eq("VALIDATION")]
                 cutoff = pd.Timestamp(valid.fold_fit_cutoff_at.iloc[0])
-                if pd.to_datetime(train.decision_at).max() >= cutoff or pd.to_datetime(pair_times.loc[train.pair_id, "target_recorded_at"]).max() > cutoff:
+                train_available = pd.to_datetime(pair_times.loc[train.pair_id, "target_available_at"])
+                if train_available.isna().any() or pd.to_datetime(train.decision_at).max() >= cutoff or train_available.max() > cutoff:
                     raise WorkbenchError("训练时间或标签可用时间越过截止点", "TEMPORAL_SPLIT")
             self._targets = targets
         return self.X.loc[self._targets.index], self._targets.copy()

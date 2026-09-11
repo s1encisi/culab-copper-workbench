@@ -34,3 +34,11 @@ python -B scripts/check_git_upload.py --ref HEAD
 ```
 
 测试中的密钥形状样例为合成值，检查器只对已审阅的精确路径和精确样例放行。新增文件仍需内容审阅，自动检查不能识别所有商业秘密。请勿使用 `--no-verify` 绕过推送检查。
+
+## G1 数据与证据查询
+
+后端版本 0.3.0 新增 /api/v2/data 下的只读依赖清单、TaskSpec、输入快照、成熟标签和事件证据接口。证据查询默认使用原事件的虚拟决策时间和 Persistence；实际计算时间另行记录。
+
+本地资源可通过 COPPER_MVP_DATA_DIR、COPPER_MVP_CONTRACT_DIR、COPPER_MVP_LABEL_DIR 和 COPPER_MVP_EVIDENCE_DIR 配置。COPPER_MVP_G1_ENABLED=false 可关闭新增路由。所有路径由进程环境或本地代码设置，HTTP 不接收路径。
+
+运行 scripts/verify_g1.py 可生成本地验收报告和一条真实事件的时间线；含真实事件和路径的产物只写入被 Git 忽略的 runs/。当前 G1 没有自动换模或新增模型，现有运行接口继续兼容。

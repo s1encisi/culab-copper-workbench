@@ -12,13 +12,14 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from copper_mvp.common import APP_VERSION, DEFAULT_RUNS_DIR, EVIDENCE_DIR, PROJECT_ROOT, WorkbenchError, dumps, safe
+from copper_mvp.common import APP_VERSION, DEFAULT_RUNS_DIR, PROJECT_ROOT, WorkbenchError, dumps, safe
 from copper_mvp.contracts import AgentDiagnosticRequest, ExplanationRequest, RunRequest, SelectionRequest
 from copper_mvp.data import DataRepository
 from copper_mvp.workflows import Workbench
+from copper_mvp.api_data import data_router
 
 
-def create_app(run_dir: Path | None = None, data: DataRepository | None = None) -> FastAPI:
+def create_app(run_dir: Path | None = None, data: DataRepository | None = None, *, enable_g1: bool | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         app.state.workbench = Workbench(run_dir or Path(os.environ.get("COPPER_MVP_RUN_DIR", str(DEFAULT_RUNS_DIR))), data=data)
@@ -27,12 +28,17 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None) 
 
     app = FastAPI(title="CuLab 本地研究工作台", version=APP_VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
 
+    if enable_g1 is None:
+        enable_g1 = os.environ.get("COPPER_MVP_G1_ENABLED", "true").lower() not in ("0", "false", "off")
+    if enable_g1:
+        app.include_router(data_router())
+
     def workbench(request: Request) -> Workbench:
         return request.app.state.workbench
 
     @app.exception_handler(WorkbenchError)
     async def domain_error(request, exc):
-        status = 409 if exc.code in ("REQUEST_CONFLICT", "CALL_ALREADY_RESERVED") else 404 if exc.code.endswith("NOT_FOUND") else 400
+        status = 409 if exc.code in ("REQUEST_CONFLICT", "CALL_ALREADY_RESERVED", "SOURCE_CHANGED") else 404 if exc.code.endswith("NOT_FOUND") else 400
         return JSONResponse(status_code=status, content={"error": {"code": exc.code, "message": str(exc)}})
 
     @app.middleware("http")
@@ -86,10 +92,10 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None) 
     def experiments(request: Request):
         history = []
         for name, subfolder in (("P2 历史基线", "baselines_v1"), ("P2.1 历史变化量", "residual_baselines_v1")):
-            path = EVIDENCE_DIR / "artifacts/p2" / subfolder / "overall_metrics_v1.csv"
+            path = workbench(request).data.evidence_dir / "artifacts/p2" / subfolder / "overall_metrics_v1.csv"
             if path.is_file():
                 rows = pd.read_csv(path)
-                history.extend({"experiment": name, "model": r.model_name, "target": "cu" if r.target_name == "target_cu_g_l" else "as", "n": r.validation_sample_count, "mae": r.pooled_mae, "rmse": r.pooled_rmse, "r2": r.pooled_r2, "run_id": r.run_id, "source": str(path.relative_to(EVIDENCE_DIR))} for r in rows.itertuples())
+                history.extend({"experiment": name, "model": r.model_name, "target": "cu" if r.target_name == "target_cu_g_l" else "as", "n": r.validation_sample_count, "mae": r.pooled_mae, "rmse": r.pooled_rmse, "r2": r.pooled_r2, "run_id": r.run_id, "source": str(path.relative_to(workbench(request).data.evidence_dir))} for r in rows.itertuples())
         return safe({"history": history, "bundles": workbench(request).models.catalog()})
 
     @app.post("/api/runs", status_code=202)

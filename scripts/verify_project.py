@@ -60,6 +60,11 @@ REQUIRED_PATHS = (
     "web/src/App.tsx",
     "web/src/AgentDiagnosisPanel.tsx",
     "web/src/ExplanationPanel.tsx",
+    "src/copper_mvp/data_contracts.py",
+    "src/copper_mvp/data_service.py",
+    "src/copper_mvp/labels.py",
+    "src/copper_mvp/api_data.py",
+    "scripts/verify_g1.py",
 )
 
 FORBIDDEN_DIR_NAMES = {
