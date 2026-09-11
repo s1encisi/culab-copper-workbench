@@ -17,6 +17,7 @@ from copper_mvp.contracts import AgentDiagnosticRequest, ExplanationRequest, Run
 from copper_mvp.data import DataRepository
 from copper_mvp.workflows import Workbench
 from copper_mvp.api_data import data_router
+from copper_mvp.api_models import model_router
 
 
 def create_app(run_dir: Path | None = None, data: DataRepository | None = None, *, enable_g1: bool | None = None) -> FastAPI:
@@ -32,6 +33,9 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
         enable_g1 = os.environ.get("COPPER_MVP_G1_ENABLED", "true").lower() not in ("0", "false", "off")
     if enable_g1:
         app.include_router(data_router())
+
+    if os.environ.get("COPPER_MVP_G2A_ENABLED", "true").lower() not in ("0", "false", "off"):
+        app.include_router(model_router())
 
     def workbench(request: Request) -> Workbench:
         return request.app.state.workbench

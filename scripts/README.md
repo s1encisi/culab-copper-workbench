@@ -16,6 +16,10 @@
 
 [verify_g1.py](verify_g1.py)检查全开发集的输入与标签时间边界，并输出真实事件的成熟前后证据。--before 可指定改造前的本地基线，--output 只能指向 runs/ 下的新验收位置；默认不会覆盖已有产物。
 
+## G2a 比较
+
+[run_model_comparison.py](run_model_comparison.py)运行六方法的固定协议比较，保存训练工件、OOF 预测、独立指标和报告。相同请求键只在相同配置与数据下复用；工件保留于 runs/mvp/model_comparisons。
+
 ## 保留的 V1/V2 兼容与研究入口
 
 | 脚本 | 当前角色 |

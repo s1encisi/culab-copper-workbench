@@ -42,3 +42,11 @@ python -B scripts/check_git_upload.py --ref HEAD
 本地资源可通过 COPPER_MVP_DATA_DIR、COPPER_MVP_CONTRACT_DIR、COPPER_MVP_LABEL_DIR 和 COPPER_MVP_EVIDENCE_DIR 配置。COPPER_MVP_G1_ENABLED=false 可关闭新增路由。所有路径由进程环境或本地代码设置，HTTP 不接收路径。
 
 运行 scripts/verify_g1.py 可生成本地验收报告和一条真实事件的时间线；含真实事件和路径的产物只写入被 Git 忽略的 runs/。当前 G1 没有自动换模或新增模型，现有运行接口继续兼容。
+
+## G2a 模型库与比较
+
+后端版本 0.4.0 新增六种方法的统一入口：Persistence、DeltaRidge、DeltaHGB、ElasticNet、Huber、PLS。GET /api/v2/models 返回方法目录；POST /api/v2/model-comparisons 创建固定协议比较，可查询历史、显式回放模型并导出结果。
+
+在项目目录运行 scripts/run_model_comparison.py，可完成本地五折比较和全开发重拟合。协议先保存，指标由独立模块从 OOF 预测及成熟标签重算；结果保留覆盖、警告、失败及计时。产物只写入 runs/。
+
+G2a 不写入旧模型目录或自动换模，当前通过脚本与新 API 使用。COPPER_MVP_G2A_ENABLED=false 可关闭新路由。推理工件会核验版本、哈希和历史截止时间。

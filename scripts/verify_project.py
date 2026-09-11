@@ -65,6 +65,13 @@ REQUIRED_PATHS = (
     "src/copper_mvp/labels.py",
     "src/copper_mvp/api_data.py",
     "scripts/verify_g1.py",
+    "src/copper_mvp/model_registry.py",
+    "src/copper_mvp/model_adapters.py",
+    "src/copper_mvp/model_training.py",
+    "src/copper_mvp/model_evaluation.py",
+    "src/copper_mvp/model_comparisons.py",
+    "src/copper_mvp/api_models.py",
+    "scripts/run_model_comparison.py",
 )
 
 FORBIDDEN_DIR_NAMES = {
