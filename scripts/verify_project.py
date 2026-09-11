@@ -95,6 +95,12 @@ REQUIRED_PATHS = (
     "src/copper_mvp/api_control.py",
     "scripts/run_mock.py",
     "web/src/ControlPanel.tsx",
+    "src/copper_mvp/routing_metrics.py",
+    "src/copper_mvp/prediction_router.py",
+    "src/copper_mvp/routing_replay.py",
+    "src/copper_mvp/routing_studies.py",
+    "src/copper_mvp/api_routing.py",
+    "scripts/run_routing_replay.py",
 )
 
 FORBIDDEN_DIR_NAMES = {

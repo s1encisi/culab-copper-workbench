@@ -21,6 +21,7 @@ from copper_mvp.api_models import model_router
 from copper_mvp.api_optimizers import optimizer_router
 from copper_mvp.api_research import research_router
 from copper_mvp.api_control import control_router
+from copper_mvp.api_routing import routing_router
 from copper_mvp.access import Principal, PROJECT
 
 
@@ -46,6 +47,7 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
     app.state.enforce_auth = enforce_auth
     app.include_router(research_router())
     app.include_router(control_router())
+    app.include_router(routing_router())
 
     def workbench(request: Request) -> Workbench:
         return request.app.state.workbench
