@@ -9,7 +9,7 @@ import time
 from copper_mvp.common import WorkbenchError
 
 PROJECT = "copper-research"
-PERMISSIONS = {"owner": {"read", "compute", "approve", "manage"},
+PERMISSIONS = {"owner": {"read", "compute", "approve", "manage", "mock_control"},
                "researcher": {"read", "compute"}, "viewer": {"read"}}
 
 

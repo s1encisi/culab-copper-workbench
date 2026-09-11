@@ -17,7 +17,14 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--run-dir", type=Path)
+    parser.add_argument("--mock-root", type=Path)
+    parser.add_argument("--mock-port", type=int, default=8766)
     args = parser.parse_args()
+    if args.mock_root:
+        mock_root = args.mock_root.resolve()
+        os.environ["COPPER_MOCK_URL"] = f"http://127.0.0.1:{args.mock_port}"
+        os.environ["COPPER_MOCK_KEY_FILE"] = str(mock_root / "driver.key")
+        os.environ["COPPER_MOCK_ADMIN_KEY_FILE"] = str(mock_root / "test_admin.key")
     if args.run_dir:
         os.environ["COPPER_MVP_RUN_DIR"] = str(args.run_dir.resolve())
     import uvicorn

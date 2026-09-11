@@ -25,6 +25,8 @@ from copper_mvp.storage import RunStore
 from copper_mvp.research_store import ResearchStore
 from copper_mvp.access import AccessControl
 from copper_mvp.research_service import ResearchService
+from copper_mvp.control.client import MockClient
+from copper_mvp.control.commands import CommandService
 
 
 class GraphState(TypedDict, total=False):
@@ -72,8 +74,10 @@ class Workbench:
         self.lock = threading.Lock()
         self.access = AccessControl(ResearchStore(self.store))
         self.research = ResearchService(self, self.access)
+        self.control = CommandService(self.store, self.access, MockClient.from_env())
 
     def close(self):
+        self.control.close()
         self.research.close()
         self.executor.shutdown(wait=True)
         self.owner.close()

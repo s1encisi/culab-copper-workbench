@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.7.0"
 WORKSPACE_ROOT = PROJECT_ROOT.parent
 DATA_DIR = PROJECT_ROOT / "data/development_2024_2025"
 EVIDENCE_DIR = WORKSPACE_ROOT / "04_多智能体项目/03_工程实现"

@@ -86,6 +86,15 @@ REQUIRED_PATHS = (
     "web/src/AccessGate.tsx",
     "web/src/ResearchPanel.tsx",
     "scripts/verify_research_live.py",
+    "src/copper_mvp/control/contracts.py",
+    "src/copper_mvp/control/mock.py",
+    "src/copper_mvp/control/mock_api.py",
+    "src/copper_mvp/control/client.py",
+    "src/copper_mvp/control/commands.py",
+    "src/copper_mvp/control/reconcile.py",
+    "src/copper_mvp/api_control.py",
+    "scripts/run_mock.py",
+    "web/src/ControlPanel.tsx",
 )
 
 FORBIDDEN_DIR_NAMES = {
