@@ -77,6 +77,15 @@ REQUIRED_PATHS = (
     "src/copper_mvp/optimizer_comparison.py",
     "src/copper_mvp/api_optimizers.py",
     "scripts/run_optimizer_comparison.py",
+    "src/copper_mvp/access.py",
+    "src/copper_mvp/research_store.py",
+    "src/copper_mvp/research_tools.py",
+    "src/copper_mvp/research_service.py",
+    "src/copper_mvp/api_research.py",
+    "configs/llm/research_agent.yaml",
+    "web/src/AccessGate.tsx",
+    "web/src/ResearchPanel.tsx",
+    "scripts/verify_research_live.py",
 )
 
 FORBIDDEN_DIR_NAMES = {

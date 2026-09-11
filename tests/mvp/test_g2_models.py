@@ -247,7 +247,7 @@ def test_week_block_interval_is_paired_and_handles_small_support():
 
 def test_api_idempotency_future_field_rejection_and_legacy_separation(experiment, tmp_path):
     data, _, _, _ = experiment
-    with TestClient(create_app(tmp_path, data)) as client:
+    with TestClient(create_app(tmp_path, data, enforce_auth=False)) as client:
         assert len(client.get("/api/v2/models").json()["items"]) == 6
         request = {"request_key": "api-g2", "methods": ["Persistence", "ElasticNet"]}
         created = client.post("/api/v2/model-comparisons", json=request)

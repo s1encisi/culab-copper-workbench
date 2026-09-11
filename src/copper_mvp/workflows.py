@@ -22,6 +22,9 @@ from copper_mvp.explanation import ExplanationService
 from copper_mvp.modeling import MODEL_VERSION, ModelManager
 from copper_mvp.optimization import solve
 from copper_mvp.storage import RunStore
+from copper_mvp.research_store import ResearchStore
+from copper_mvp.access import AccessControl
+from copper_mvp.research_service import ResearchService
 
 
 class GraphState(TypedDict, total=False):
@@ -67,8 +70,11 @@ class Workbench:
         self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="copper-task")
         self.futures = {}
         self.lock = threading.Lock()
+        self.access = AccessControl(ResearchStore(self.store))
+        self.research = ResearchService(self, self.access)
 
     def close(self):
+        self.research.close()
         self.executor.shutdown(wait=True)
         self.owner.close()
 

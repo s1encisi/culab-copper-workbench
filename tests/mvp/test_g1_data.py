@@ -177,7 +177,7 @@ def test_missing_labels_do_not_disable_prediction_snapshots(repository, selected
 
 
 def test_api_replay_label_gate_and_legacy_compatibility(repository, selected, tmp_path):
-    with TestClient(create_app(tmp_path, repository)) as client:
+    with TestClient(create_app(tmp_path, repository, enforce_auth=False)) as client:
         assert client.get("/api/experiments").status_code == 200
         old = client.get("/api/events/" + selected).json()
         base = "/api/v2/data/events/" + selected
@@ -203,7 +203,7 @@ def test_api_replay_label_gate_and_legacy_compatibility(repository, selected, tm
 
 def test_feature_flag_disables_only_g1_routes(repository, tmp_path, monkeypatch):
     monkeypatch.setenv("COPPER_MVP_G1_ENABLED", "false")
-    with TestClient(create_app(tmp_path, repository)) as client:
+    with TestClient(create_app(tmp_path, repository, enforce_auth=False)) as client:
         assert client.get("/api/v2/data/dependencies").status_code == 404
         assert client.get("/api/overview").status_code == 200
 

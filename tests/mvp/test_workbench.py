@@ -36,7 +36,7 @@ def trained(tmp_path_factory, data):
 
 @pytest.fixture
 def client(tmp_path, data):
-    with TestClient(create_app(tmp_path, data)) as c:
+    with TestClient(create_app(tmp_path, data, enforce_auth=False)) as c:
         yield c
 
 

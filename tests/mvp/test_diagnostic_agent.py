@@ -277,7 +277,7 @@ def test_dotenv_key_is_selective_and_does_not_mutate_environment(tmp_path, monke
 def test_api_submit_reuse_history_export_and_future_field_rejection(tmp_path, monkeypatch):
     monkeypatch.setattr("copper_mvp.diagnostic_agent.read_deepseek_key", lambda: SecretStr("test-secret-never-log"))
     provider = ScriptedProvider(basic_script() + basic_script())
-    with TestClient(create_app(tmp_path, SmallData())) as client:
+    with TestClient(create_app(tmp_path, SmallData(), enforce_auth=False)) as client:
         wb = client.app.state.workbench
         source = make_source(wb.store)
         wb.diagnostic_agent.models = SmallModels()

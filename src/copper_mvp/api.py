@@ -19,9 +19,11 @@ from copper_mvp.workflows import Workbench
 from copper_mvp.api_data import data_router
 from copper_mvp.api_models import model_router
 from copper_mvp.api_optimizers import optimizer_router
+from copper_mvp.api_research import research_router
+from copper_mvp.access import Principal, PROJECT
 
 
-def create_app(run_dir: Path | None = None, data: DataRepository | None = None, *, enable_g1: bool | None = None) -> FastAPI:
+def create_app(run_dir: Path | None = None, data: DataRepository | None = None, *, enable_g1: bool | None = None, enforce_auth: bool = True, frontend_dir: Path | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
         app.state.workbench = Workbench(run_dir or Path(os.environ.get("COPPER_MVP_RUN_DIR", str(DEFAULT_RUNS_DIR))), data=data)
@@ -40,12 +42,15 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
 
     app.include_router(optimizer_router())
 
+    app.state.enforce_auth = enforce_auth
+    app.include_router(research_router())
+
     def workbench(request: Request) -> Workbench:
         return request.app.state.workbench
 
     @app.exception_handler(WorkbenchError)
     async def domain_error(request, exc):
-        status = 409 if exc.code in ("REQUEST_CONFLICT", "CALL_ALREADY_RESERVED", "SOURCE_CHANGED") else 404 if exc.code.endswith("NOT_FOUND") else 400
+        status = 401 if exc.code == "UNAUTHENTICATED" else 403 if exc.code == "FORBIDDEN" else 409 if exc.code in ("REQUEST_CONFLICT", "CALL_ALREADY_RESERVED", "SOURCE_CHANGED", "VERSION_CONFLICT", "TASK_STATE", "SESSION_BUSY") else 404 if exc.code.endswith("NOT_FOUND") else 400
         return JSONResponse(status_code=status, content={"error": {"code": exc.code, "message": str(exc)}})
 
     @app.middleware("http")
@@ -53,6 +58,27 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
         origin = request.headers.get("origin")
         if origin and urlparse(origin).hostname not in ("localhost", "127.0.0.1", "::1"):
             return JSONResponse(status_code=403, content={"error": {"code": "LOCAL_ONLY", "message": "此工作台在本机使用"}})
+        if request.url.path.startswith("/api/"):
+            if enforce_auth and request.url.hostname not in ("localhost", "127.0.0.1", "::1"):
+                return JSONResponse(status_code=403, content={"error": {"code": "LOCAL_ONLY", "message": "请从本机地址访问"}})
+            authorization = request.headers.get("authorization", "")
+            key = authorization[7:] if authorization.startswith("Bearer ") else None
+            principal = request.app.state.workbench.access.authenticate(key=key, cookie=request.cookies.get("culab_session"))
+            if not enforce_auth and principal is None:
+                principal = Principal("owner", "owner")
+            request.state.principal = principal
+            if request.url.path not in ("/api/auth/status", "/api/auth/session"):
+                if principal is None:
+                    return JSONResponse(status_code=401, content={"error": {"code": "UNAUTHENTICATED", "message": "需要本机访问码"}})
+                if principal.project_id != PROJECT:
+                    return JSONResponse(status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号无权访问此项目"}})
+                legacy_write = request.method != "GET" and request.url.path.startswith("/api/runs")
+                compute_write = request.method == "POST" and request.url.path == "/api/v2/model-comparisons"
+                if legacy_write or compute_write:
+                    try:
+                        principal.require("compute")
+                    except WorkbenchError:
+                        return JSONResponse(status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号没有计算权限"}})
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
@@ -162,7 +188,7 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
         text += "\n\n## 计算结果\n\n```json\n" + json.dumps(result, ensure_ascii=False, indent=2) + "\n```\n"
         return Response(text, media_type="text/markdown; charset=utf-8", headers=headers)
 
-    dist = PROJECT_ROOT / "web/dist"
+    dist = frontend_dir or PROJECT_ROOT / "web/dist"
     app.mount("/assets", StaticFiles(directory=dist / "assets", check_dir=False), name="assets")
 
     @app.get("/{path:path}")

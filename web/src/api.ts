@@ -12,6 +12,7 @@ export type AgentResult = {kind:'agent_diagnosis';source_run_id:string;model:str
 export type AgentRun = Omit<Run,'result'> & {result:AgentResult|null};
 export async function api<T>(path:string, body?:unknown, signal?:AbortSignal):Promise<T> {
   const response = await fetch('/api'+path,{method:body===undefined?'GET':'POST',headers:body===undefined?undefined:{'Content-Type':'application/json'},body:body===undefined?undefined:JSON.stringify(body),signal});
+  if(response.status===401)window.dispatchEvent(new Event('culab:auth-required'));
   const value=await response.json();
   if(!response.ok){throw new Error(value.error?.message || (Array.isArray(value.detail)?value.detail.map((x:{msg:string})=>x.msg).join('；'):value.detail) || '请求失败');}
   return value;

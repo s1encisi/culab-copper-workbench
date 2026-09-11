@@ -58,3 +58,9 @@ G2a 不写入旧模型目录或自动换模，当前通过脚本与新 API 使�
 ## G2b 优化器比较
 
 版本 0.5.0 将旧优化与新比较统一到同一目标/约束计算。NSGA-II、SPEA2、SMS-EMOA 按相同初始点、总预算和参考点比较；运行 scripts/run_optimizer_comparison.py，或通过 /api/v2/optimizers 和 /api/v2/optimizer-comparisons 读取结果。工件仅保存本地，候选不会自动成为设备命令。
+
+## G3 研究对话
+
+版本 0.6.0 新增本机访问码登录、连续研究对话、工具证据、任务暂停/恢复/取消。首次启动后，访问码位于运行目录的 owner_access.key；原 API 也通过身份与权限检查。
+
+研究对话使用只读工具访问已选资源。默认关闭真实模型调用；明确设置进程变量 COPPER_ASSISTANT_LIVE_CALLS=1 后才调用现有 DeepSeek 密钥。会话、任务、证据和费用留在本地数据库，首次迁移保留备份。

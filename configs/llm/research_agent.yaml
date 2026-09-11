@@ -1,0 +1,18 @@
+# G3 free-question service. Prices verified from the official CNY table.
+model: deepseek-flash
+thinking: enabled
+reasoning_effort: high
+max_calls: 6
+max_tool_calls: 8
+max_output_tokens: 16384
+request_timeout_seconds: 120
+max_wall_seconds: 300
+max_cost_cny: 2.0
+monthly_limit_cny: 100.0
+pricing:
+  verified_on: '2026-09-11'
+  source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
+  cache_hit_per_million_cny: 0.04
+  cache_miss_per_million_cny: 2.0
+  output_per_million_cny: 8.0
+  off_peak_multiplier: 0.5
