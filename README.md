@@ -50,3 +50,11 @@ python -B scripts/check_git_upload.py --ref HEAD
 在项目目录运行 scripts/run_model_comparison.py，可完成本地五折比较和全开发重拟合。协议先保存，指标由独立模块从 OOF 预测及成熟标签重算；结果保留覆盖、警告、失败及计时。产物只写入 runs/。
 
 G2a 不写入旧模型目录或自动换模，当前通过脚本与新 API 使用。COPPER_MVP_G2A_ENABLED=false 可关闭新路由。推理工件会核验版本、哈希和历史截止时间。
+
+## 升级开发分支
+
+本轮系统升级统一在 codex/system-upgrade 分支进行，G1、G2a 及后续阶段按完成的业务闭环提交。main 保留改进前的 34933e0 基线。完整设计与内部验收材料继续保存在本地受保护目录；开发按真实功能、实验与接口验收推进。
+
+## G2b 优化器比较
+
+版本 0.5.0 将旧优化与新比较统一到同一目标/约束计算。NSGA-II、SPEA2、SMS-EMOA 按相同初始点、总预算和参考点比较；运行 scripts/run_optimizer_comparison.py，或通过 /api/v2/optimizers 和 /api/v2/optimizer-comparisons 读取结果。工件仅保存本地，候选不会自动成为设备命令。

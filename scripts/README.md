@@ -32,3 +32,7 @@
 | [run_llm_connectivity_v1.py](run_llm_connectivity_v1.py) | 旧角色配置的 LLM 连接实验；当前 Flash 诊断从工作台入口运行 |
 
 这些路径由既有说明或验收引用，保留原位。[当前使用指南](../docs/MVP使用与验收.md)说明哪条入口用于日常工作。
+
+## G2b 比较
+
+[run_optimizer_comparison.py](run_optimizer_comparison.py)运行统一问题下的优化器对照。--mode benchmark 使用解析前沿数学案例；--mode plant --cases 8 使用八个历史工况，--seeds 与 --budget 明确重复和总求值上限。结果包含完整求值 CSV 和逐轮复核前沿。

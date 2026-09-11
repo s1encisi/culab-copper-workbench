@@ -16,15 +16,11 @@ from copper_mvp.common import WorkbenchError, digest, safe
 from copper_mvp.contracts import RunRequest
 from copper_mvp.data import DataRepository
 from copper_mvp.modeling import ModelManager
+from copper_mvp.optimization_problem import build_problem, positive_scale
 
 
 def nondominated(F: np.ndarray) -> np.ndarray:
     return NonDominatedSorting().do(np.asarray(F, dtype=float), only_non_dominated_front=True)
-
-
-def positive_scale(values: np.ndarray) -> np.ndarray:
-    scale = np.nanquantile(values, 0.75, axis=0) - np.nanquantile(values, 0.25, axis=0)
-    return np.where(np.isfinite(scale) & (scale > 0), scale, 1.0)
 
 
 class CandidateProblem(Problem):
@@ -45,74 +41,14 @@ class CandidateProblem(Problem):
 
 def solve(data: DataRepository, models: ModelManager, request: RunRequest, output: Path, progress: Callable) -> dict:
     started = perf_counter()
-    warnings = []
-    context = None; resolved = None; stages = []; variable_stages = []; ranges = []
-    if request.mode == "benchmark":
-        lower = np.zeros(2); upper = np.full(2, 3.0)
-        reference_x = np.ones((1, 2))
-        labels = ["目标 f₁", "目标 f₂"]
-        units = ["无量纲", "无量纲"]
-        def evaluate(X):
-            return np.column_stack(((X * X).sum(axis=1), ((X - 2) ** 2).sum(axis=1))), (X.sum(axis=1) - 3)[:, None], {"variables": X}
-        ref_F, ref_G, _ = evaluate(reference_x)
-        constraints = 1
-    else:
-        if request.model_profile == "Persistence":
-            raise WorkbenchError("优化需要响应模型，请选择自动选择或已训练的变化量模型", "RESPONSE_MODEL_REQUIRED")
-        context = data.context(request.event_id)
-        stages = context["supported_stages"]
-        if not stages:
-            raise WorkbenchError("该事件缺少配对的正电流与电压，请选择另一个事件", "ELECTRICAL_DATA_MISSING")
-        resolved = models.resolve(request.event_id, request.model_profile, request.model_scope, request.bundle_id)
-        fold = None if resolved["fold_id"] == "DEVELOPMENT" else resolved["fold_id"]
-        train_ids = data.training_ids(fold)
-        same = [e for e in train_ids if data.mode_cards[e]["mode_code"] == context["mode_code"]]
-        history_ids = same if len(same) >= 30 else train_ids
-        if len(same) < 30:
-            warnings.append("同工况训练样本少于30条，电流范围使用对应训练期的正电流统计")
-        if len(stages) == 1:
-            warnings.append(f"电功率代理覆盖三四段中的第{stages[0]}段")
-        row = data.row(request.event_id)
-        base_currents = np.array([row[f"stage{s}_current_a__t_minus_0h"] for s in stages], dtype=float)
-        voltages = np.array([row[f"stage{s}_voltage_v__t_minus_0h"] for s in stages], dtype=float)
-        lower_list = []; upper_list = []; active_positions = []
-        for j, stage in enumerate(stages):
-            series = data.frame.loc[history_ids, f"stage{stage}_current_a__t_minus_0h"].to_numpy(float)
-            values = series[np.isfinite(series) & (series > 0)]
-            if len(values) < 2:
-                warnings.append(f"第{stage}段历史电流不足，本次固定该段")
-                continue
-            p5, p95 = np.quantile(values, [0.05, 0.95])
-            lo = max(p5, (1 - request.radius) * base_currents[j])
-            hi = min(p95, (1 + request.radius) * base_currents[j])
-            varies = hi - lo > 1e-6
-            ranges.append({"stage": stage, "current": base_currents[j], "lower": lo if varies else base_currents[j], "upper": hi if varies else base_currents[j], "historical_p5": p5, "historical_p95": p95, "historical_n": len(values), "varies": varies, "source": "same_mode" if len(same) >= 30 else "training_period"})
-            if varies:
-                variable_stages.append(stage); active_positions.append(j); lower_list.append(lo); upper_list.append(hi)
-        lower = np.asarray(lower_list); upper = np.asarray(upper_list)
-        base_matrix = data.candidate_matrix(request.event_id, stages, base_currents[None, :])
-        ref_y = models.predict_matrix(resolved, base_matrix)[0]
-        ref_power = float(base_currents @ voltages / 1000)
-        _, train_y = data.training_data()
-        scale_y = positive_scale(train_y.loc[train_ids].to_numpy(float))
-        historical_currents = data.frame.loc[history_ids, [f"stage{s}_current_a__t_minus_0h" for s in stages]].to_numpy(float)
-        historical_currents = historical_currents[np.isfinite(historical_currents).all(axis=1) & (historical_currents > 0).all(axis=1)]
-        current_scale = positive_scale(historical_currents) if len(historical_currents) else np.ones(len(stages))
-        labels = ["预测 Cu", "电功率代理"]
-        units = ["g/L", "kW"]
-        def evaluate(X):
-            currents = np.repeat(base_currents[None, :], len(X), axis=0)
-            for j, position in enumerate(active_positions):
-                currents[:, position] = X[:, j]
-            matrix = data.candidate_matrix(request.event_id, stages, currents)
-            y = models.predict_matrix(resolved, matrix)
-            power = currents @ voltages / 1000
-            G = np.column_stack(((y[:, 1] - ref_y[1] - request.epsilon_as) / scale_y[1], -y[:, 0] / scale_y[0], -y[:, 1] / scale_y[1]))
-            return np.column_stack((y[:, 0], power)), G, {"currents": currents, "y": y}
-        reference_x = base_currents[active_positions][None, :]
-        ref_F = np.array([[ref_y[0], ref_power]])
-        ref_G = np.array([[-request.epsilon_as / scale_y[1], -ref_y[0] / scale_y[0], -ref_y[1] / scale_y[1]]])
-        constraints = 3
+    prepared = build_problem(data, models, request)
+    lower, upper, reference_x = prepared.lower, prepared.upper, prepared.reference_x
+    ref_F, ref_G, evaluate = prepared.ref_F, prepared.ref_G, prepared.evaluate
+    labels, units, constraints = prepared.labels, prepared.units, prepared.constraints
+    warnings, context, resolved = prepared.warnings, prepared.context, prepared.resolved
+    stages, variable_stages, ranges = prepared.stages, prepared.variable_stages, prepared.ranges
+    ref_y, base_currents = prepared.ref_y, prepared.base_currents
+    historical_currents, current_scale = prepared.historical_currents, prepared.current_scale
     if len(lower):
         problem = CandidateProblem(lower, upper, evaluate, constraints)
         algorithm = NSGA2(pop_size=64, crossover=SBX(prob=0.9, eta=15), mutation=PM(prob=1.0, prob_var=1 / len(lower), eta=20), eliminate_duplicates=True)

@@ -4,13 +4,14 @@ import hashlib
 import json
 import math
 import os
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 WORKSPACE_ROOT = PROJECT_ROOT.parent
 DATA_DIR = PROJECT_ROOT / "data/development_2024_2025"
 EVIDENCE_DIR = WORKSPACE_ROOT / "04_多智能体项目/03_工程实现"
@@ -95,4 +96,13 @@ def write_json(path: Path, value: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(dumps(value) + "\n", encoding="utf-8")
-    temporary.replace(path)
+    # Windows readers may briefly deny replacement while indexing a completed file.
+    for delay in (0, 0.02, 0.05, 0.1, 0.2):
+        if delay:
+            time.sleep(delay)
+        try:
+            temporary.replace(path)
+            return
+        except PermissionError:
+            if os.name != "nt" or delay == 0.2:
+                raise

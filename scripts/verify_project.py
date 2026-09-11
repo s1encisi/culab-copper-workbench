@@ -72,6 +72,11 @@ REQUIRED_PATHS = (
     "src/copper_mvp/model_comparisons.py",
     "src/copper_mvp/api_models.py",
     "scripts/run_model_comparison.py",
+    "src/copper_mvp/optimization_problem.py",
+    "src/copper_mvp/optimizer_registry.py",
+    "src/copper_mvp/optimizer_comparison.py",
+    "src/copper_mvp/api_optimizers.py",
+    "scripts/run_optimizer_comparison.py",
 )
 
 FORBIDDEN_DIR_NAMES = {
