@@ -10,10 +10,11 @@ from copper_mvp.classical_registry import CLASSICAL_METHODS, classical_spec
 from copper_mvp.statistical_registry import STATISTICAL_METHODS, statistical_spec
 from copper_mvp.specialized_registry import SPECIALIZED_METHODS, specialized_spec
 from copper_mvp.bart_registry import BART_METHODS, bart_spec
+from copper_mvp.symbolic_registry import SYMBOLIC_METHODS, symbolic_spec
 
 REGISTRY_VERSION = "model-registry.g2a.v1"
 LEGACY_METHOD_IDS = ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS")
-METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS + STATISTICAL_METHODS + SPECIALIZED_METHODS + BART_METHODS
+METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS + STATISTICAL_METHODS + SPECIALIZED_METHODS + BART_METHODS + SYMBOLIC_METHODS
 FEATURE_COUNT = 114
 NUMERIC_COUNT = 110
 SEED = 20260905
@@ -37,6 +38,8 @@ IMPLEMENTATIONS = {
 
 
 def method_spec(method_id: str, seed: int = SEED) -> dict:
+    if method_id in SYMBOLIC_METHODS:
+        return symbolic_spec(seed)
     if method_id in BART_METHODS:
         return bart_spec(seed)
     if method_id in SPECIALIZED_METHODS:
@@ -67,8 +70,8 @@ def method_spec(method_id: str, seed: int = SEED) -> dict:
 
 
 def catalog() -> dict:
-    return {"schema_version": "model-registry.g6h.v1", "items": [method_spec(m) for m in METHOD_IDS],
-            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS) + len(STATISTICAL_METHODS) + len(SPECIALIZED_METHODS) + len(BART_METHODS), "automatic_promotion": False,
+    return {"schema_version": "model-registry.g6i.v1", "items": [method_spec(m) for m in METHOD_IDS],
+            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS) + len(STATISTICAL_METHODS) + len(SPECIALIZED_METHODS) + len(BART_METHODS) + len(SYMBOLIC_METHODS), "automatic_promotion": False,
             "default_comparison_methods": list(LEGACY_METHOD_IDS)}
 
 

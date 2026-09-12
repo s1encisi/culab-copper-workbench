@@ -51,7 +51,8 @@ def verify_inventory(run_root, study_id, output):
         assert record["result"]["status"] == "completed"
         manifest, fit_protocol = read_training(folder)
         oof = pd.read_csv(folder / "oof_predictions.csv")
-        uncertainty = pd.read_csv(folder / "oof_uncertainty.csv")
+        uncertainty_path = folder / "oof_uncertainty.csv"
+        uncertainty = pd.read_csv(uncertainty_path) if uncertainty_path.exists() else None
         for entry in manifest["artifacts"]:
             method, fold = entry["method_id"], entry["fold_id"]
             if method not in methods:
@@ -87,6 +88,24 @@ def verify_inventory(run_root, study_id, output):
                     for column, target in enumerate(("cu", "as")):
                         expected_q = uncertainty[uncertainty.target.eq(target)].set_index("event_id").loc[events, ["q10", "q50", "q90"]].to_numpy(float)
                         np.testing.assert_allclose(quantiles[:, :, column], expected_q, rtol=1e-10, atol=1e-9)
+                if method == "SymbolicRegression":
+                    from copper_mvp.symbolic_expression import evaluate_expression
+                    payload = model._symbolic.equations()
+                    subset = X[:, payload["input_indices"]].copy()
+                    imputation = np.asarray(payload["imputation_values"])
+                    subset = np.where(np.isnan(subset), imputation, subset)
+                    standardized = (subset-np.asarray(payload["input_mean"]))/np.asarray(payload["input_scale"])
+                    standardized[:, ~np.asarray(payload["active_input_mask"], bool)] = 0.
+                    delta = np.column_stack([evaluate_expression(m["ast"], standardized) for m in payload["models"]])
+                    reconstructed = X[:, :2]+np.asarray(payload["target_delta_mean"])+np.asarray(payload["target_delta_scale"])*delta
+                    np.testing.assert_allclose(reconstructed, predicted, rtol=1e-10, atol=1e-9)
+                    path = output / "explanations" / f"Symbolic-{item['seed']}-{fold}.json"
+                    write_json(path, payload)
+                    report["explanations"].append({"method": method, "seed": item["seed"], "fold": fold,
+                        "path": path.relative_to(output).as_posix(), "sha256": file_hash(path),
+                        "affine_reconstruction": True, "expressions": [m["expression"] for m in payload["models"]],
+                        "structures": [m["structure"] for m in payload["models"]],
+                        "selected_features": [m["selected_features"] for m in payload["models"]]})
                 if method == "EBM":
                     explained = model._specialized
                     reconstructed = np.column_stack([
@@ -145,6 +164,16 @@ def verify_inventory(run_root, study_id, output):
                 "mean_probe_main_effect_seed_sd": float(np.std(effects, axis=0, ddof=1).mean()) if len(terms)>1 else None,
                 "maximum_probe_main_effect_seed_sd": float(np.std(effects, axis=0, ddof=1).max()) if len(terms)>1 else None})
     report["ebm_seed_stability"] = stability
+    symbolic_records = [r for r in report["explanations"] if r["method"] == "SymbolicRegression"]
+    if symbolic_records:
+        report["symbolic_structure_stability"] = {}
+        for index, target in enumerate(("cu", "as")):
+            signatures = Counter(json.dumps(r["structures"][index], sort_keys=True) for r in symbolic_records)
+            features = [set(r["selected_features"][index]) for r in symbolic_records]
+            overlap = [len(a & b)/len(a | b) if a | b else 1. for i,a in enumerate(features) for b in features[i+1:]]
+            report["symbolic_structure_stability"][target] = {"fitted_expressions": len(features),
+                "distinct_structures": len(signatures), "structure_counts": dict(signatures),
+                "mean_feature_jaccard": float(np.mean(overlap)) if overlap else None}
     store = RunStore(output / "lifecycle")
     access = AccessControl(ResearchStore(store))
     actor = access.authenticate(key=access.owner_key_path.read_text().strip())

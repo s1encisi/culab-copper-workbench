@@ -85,6 +85,9 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
     if "BART" in request.methods:
         from copper_mvp.bart_registry import bart_source_hashes
         protocol["code_hashes"].update(bart_source_hashes())
+    if "SymbolicRegression" in request.methods:
+        from copper_mvp.symbolic_registry import symbolic_source_hashes
+        protocol["code_hashes"].update(symbolic_source_hashes())
     write_json(output / "protocol.json", protocol)
     started = time.perf_counter()
     timings = []; artifacts = []; predictions = []; uncertainty_predictions = []
@@ -146,7 +149,7 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                                     ordered_times = [source_time(data.row(event).decision_at) for event in train_ids]
                                     if any(a > b for a, b in zip(ordered_times, ordered_times[1:])):
                                         raise WorkbenchError("CatBoost 训练行必须按时间排序", "MODEL_TRAINING_ORDER")
-                                if method_id == "BART":
+                                if method_id in ("BART", "SymbolicRegression"):
                                     model.fit(X_train, y_train, max_wall_seconds=request.max_wall_seconds-(time.perf_counter()-started))
                                 else:
                                     model.fit(X_train, y_train)
@@ -242,6 +245,8 @@ def load_registered_model(root: Path, manifest: dict, protocol: dict, method_id:
         numeric_evaluator()
         if recorded["method_version"] != current["method_version"]:
             raise WorkbenchError("BART 模型实现版本不兼容", "COMPARISON_MODEL_VERSION")
+    if method_id == "SymbolicRegression" and recorded["method_version"] != current["method_version"]:
+        raise WorkbenchError("符号回归实现版本不兼容", "COMPARISON_MODEL_VERSION")
     path = safe_artifact_path(root, entry["path"])
     if not path.is_file() or file_hash(path) != entry["sha256"]:
         raise WorkbenchError("比较模型工件哈希不匹配", "MODEL_HASH_MISMATCH")
