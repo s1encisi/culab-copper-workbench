@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import sys
 from copper_mvp.common import PROJECT_ROOT, WorkbenchError
-from copper_mvp.bart_registry import BART_PACKAGES
+from copper_mvp.bart_registry import BART_PACKAGES, BART_PARAMETERS
 
 
 def prepare_bart_runtime():
@@ -19,7 +19,7 @@ def prepare_bart_runtime():
         if actual != expected:
             raise WorkbenchError("BART 依赖版本不一致: "+name, "BART_DEPENDENCY")
     cache = PROJECT_ROOT/"runs/bart_runtime_cache"
-    os.environ["PYTENSOR_FLAGS"] = "cxx=,blas__ldflags=,base_compiledir="+str(cache/"pytensor")
+    os.environ["PYTENSOR_FLAGS"] = "cxx=,blas__ldflags=,mode="+BART_PARAMETERS["pytensor_mode"]+",base_compiledir="+str(cache/"pytensor")
     os.environ["NUMBA_CACHE_DIR"] = str(cache/"numba")
     os.environ["MPLCONFIGDIR"] = str(cache/"matplotlib")
     os.environ["MPLBACKEND"] = "Agg"

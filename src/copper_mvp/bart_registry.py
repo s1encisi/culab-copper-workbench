@@ -11,9 +11,10 @@ def bart_source_hashes():
 
 
 BART_METHODS = ("BART",)
-BART_VERSION = "g6h.bart.v2"
+BART_VERSION = "g6h.bart.v3"
 BART_PARAMETERS = {
     "components": 8, "trees": 20, "tune": 400, "draws": 600, "chains": 4,
+    "pytensor_mode": "NUMBA",
     "particles": 10, "batch_fraction": 0.25, "target_accept": 0.9,
     "sigma_prior_scale": 1.0, "alpha": 0.95, "beta": 2.0,
     "maximum_rhat": 1.05, "minimum_ess": 100, "max_fit_seconds": 3600,

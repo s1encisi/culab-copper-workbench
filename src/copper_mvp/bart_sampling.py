@@ -16,6 +16,9 @@ def fit_bart_posterior(X, y, settings, seed, output, runtime):
     import arviz as az
     import pymc as pm
     import pymc_bart as pmb
+    import pytensor
+    assert str(pytensor.config.mode) == settings["pytensor_mode"]
+    runtime = {**runtime, "pytensor_mode": str(pytensor.config.mode)}
     from numba import njit
     seed_compiled = njit(cache=True)(_seed_compiled_random)
     output = Path(output)
@@ -43,10 +46,17 @@ def fit_bart_posterior(X, y, settings, seed, output, runtime):
                     noise_step = pm.NUTS(vars=[sigma], target_accept=settings["target_accept"])
                     manager = mu.owner.op.all_trees._manager
                     try:
+                        def update_sampling(trace, draw):
+                            index = draw.draw_idx+1
+                            if index % 100 == 0 or index == settings["tune"]+settings["draws"]:
+                                write_json(output/"state.json", {"status": "sampling", "target": name,
+                                    "chain": chain, "seed": chain_seed, "iterations": index,
+                                    "total_iterations": settings["tune"]+settings["draws"],
+                                    "tuning": bool(draw.tuning), "elapsed_seconds": time.perf_counter()-start})
                         trace = pm.sample(draws=settings["draws"], tune=settings["tune"],
                             chains=1, cores=1, random_seed=chain_seed,
                             step=[tree_step, noise_step], progressbar=False,
-                            compute_convergence_checks=False)
+                            compute_convergence_checks=False, callback=update_sampling)
                         collections = list(mu.owner.op.all_trees)
                         if len(collections) != settings["draws"]:
                             raise ValueError("Retained BART trees do not match posterior draws")
