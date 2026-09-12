@@ -23,6 +23,15 @@ from build_file_manifest import collect_entries, sha256_file  # noqa: E402
 
 
 REQUIRED_PATHS = (
+    "src/copper_mvp/specialized_registry.py",
+    "src/copper_mvp/specialized_models.py",
+    "src/copper_mvp/specialized_evaluation.py",
+    "src/copper_mvp/cubist_model.py",
+    "src/copper_mvp/model_inventory_study.py",
+    "requirements-specialized-models.txt",
+    "requirements-cubist.txt",
+    "scripts/setup_specialized_models.ps1",
+    "scripts/run_model_inventory_study.py",
     ".env.example",
     "README.md",
     "pyproject.toml",

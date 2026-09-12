@@ -133,7 +133,7 @@ class ArtifactSources:
             "family":family,"dependencies":dependencies,
             "license":{"project":"Not declared in the project metadata; no new license is assigned here",
                 "dependencies":{name:(metadata.metadata(name).get("License-Expression") or metadata.metadata(name).get("License") or "See installed distribution metadata")[:160]
-                    for name in ("numpy","scikit-learn","joblib")}},
+                    for name in dependencies}},
             "calibrator":None,"calibrator_missing_reason":"No prediction-interval calibration was fitted for these artifacts",
             "scopes":["historical_oof"],"proxy_approved":False,"causal_control":False,
             "evaluation_mode":"historical_replay","benchmark_event_hash":result["common_event_hash"]})

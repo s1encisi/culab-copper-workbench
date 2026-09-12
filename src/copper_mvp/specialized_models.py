@@ -1,4 +1,4 @@
-"""Native CatBoost, NGBoost and EBM behind the shared physical-unit interface."""
+"""Native CatBoost, NGBoost, EBM and Cubist in the physical-unit interface."""
 from importlib import metadata
 import sys
 import warnings
