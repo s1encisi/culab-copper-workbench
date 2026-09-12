@@ -82,6 +82,9 @@ class ComparisonService:
         if any(m in ("TabNet", "FTTransformer", "NODE") for m in request.methods):
             from copper_mvp.tabular_registry import tabular_source_hashes
             fingerprint_data["tabular_adapters"] = tabular_source_hashes()
+        if any(method_spec(m, request.seed).get("input_kind") == "anchored_process_sequence" for m in request.methods):
+            from copper_mvp.temporal_registry import temporal_source_hashes
+            fingerprint_data["temporal_adapters"] = temporal_source_hashes()
         fingerprint = digest(fingerprint_data)
         with self.lock:
             if (root / "state.json").exists():

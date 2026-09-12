@@ -57,6 +57,9 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
     if any(m in ("TabNet", "FTTransformer", "NODE") for m in methods):
         from copper_mvp.tabular_registry import TABULAR_SOURCE_FILES
         source_files += TABULAR_SOURCE_FILES
+    if any(method_spec(m, seeds[0]).get("input_kind") == "anchored_process_sequence" for m in methods):
+        from copper_mvp.temporal_registry import TEMPORAL_FILES
+        source_files += TEMPORAL_FILES
     code_hashes = {p: file_hash(PROJECT_ROOT / p) for p in source_files}
     protocol = {
         "schema_version": "model-inventory-study.g6g.v1", "request_key": request_key,

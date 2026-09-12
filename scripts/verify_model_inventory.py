@@ -72,7 +72,10 @@ def verify_inventory(run_root, study_id, output):
                 sample = part.iloc[indices]
                 events = sample.event_id.tolist()
                 X = data.X.loc[events].to_numpy(float)
-                predicted = model.predict(X)
+                if model.spec.get("input_kind") == "anchored_process_sequence":
+                    predicted = model.predict_context(data, events)
+                else:
+                    predicted = model.predict(X)
                 expected = sample[["cu", "as"]].to_numpy(float)
                 np.testing.assert_allclose(predicted, expected, rtol=1e-10, atol=1e-9)
                 evidence.update(scope="held_out_oof_replay", replayed_events=len(events),

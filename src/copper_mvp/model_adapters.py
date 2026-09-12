@@ -19,6 +19,7 @@ from copper_mvp.specialized_registry import SPECIALIZED_METHODS
 from copper_mvp.bart_registry import BART_METHODS
 from copper_mvp.symbolic_registry import SYMBOLIC_METHODS
 from copper_mvp.tabular_registry import TABULAR_METHODS
+from copper_mvp.temporal_registry import TEMPORAL_METHODS
 
 
 def preprocess():
@@ -50,7 +51,7 @@ class RegisteredModel:
         self.n_features_in_ = FEATURE_COUNT
 
     def fit(self, X, y, sample_weight=None, *, max_wall_seconds=None):
-        if self.method_id in SEQUENCE_METHODS:
+        if self.method_id in SEQUENCE_METHODS + TEMPORAL_METHODS:
             raise WorkbenchError("序列方法需要完整事件上下文", "MODEL_CONTEXT_REQUIRED")
         X = validate_X(X)
         weight = None
@@ -138,7 +139,7 @@ class RegisteredModel:
         return self
 
     def predict(self, X):
-        if self.method_id in SEQUENCE_METHODS:
+        if self.method_id in SEQUENCE_METHODS + TEMPORAL_METHODS:
             raise WorkbenchError("序列方法需要事件标识和原始记录顺序", "MODEL_CONTEXT_REQUIRED")
         X = validate_X(X)
         if not self.is_fitted:
@@ -177,7 +178,14 @@ class RegisteredModel:
             raise WorkbenchError("该方法未开放概率输出", "MODEL_UNCERTAINTY_UNSUPPORTED")
         return self._classical.uncertainty(X)
 
-    def fit_context(self, data, train_ids, cutoff):
+    def fit_context(self, data, train_ids, cutoff, *, max_wall_seconds=None):
+        if self.method_id in TEMPORAL_METHODS:
+            from copper_mvp.temporal_models import TemporalModel
+            self._temporal = TemporalModel(self.method_id, self.seed).fit_context(data, train_ids, cutoff, max_wall_seconds=max_wall_seconds)
+            self.models, self.fit_warnings = self._temporal.models, self._temporal.fit_warnings
+            self.fit_metadata = self._temporal.fit_metadata
+            self.is_fitted = True
+            return self
         if self.method_id not in SEQUENCE_METHODS:
             raise WorkbenchError("该方法使用矩阵训练接口", "MODEL_CONTEXT_UNSUPPORTED")
         from copper_mvp.statistical_models import EventSequenceModel
@@ -191,6 +199,8 @@ class RegisteredModel:
     def predict_context(self, data, event_ids):
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
+        if self.method_id in TEMPORAL_METHODS:
+            return self._temporal.predict_context(data, event_ids)
         if self.method_id in SEQUENCE_METHODS:
             return self._sequence.forecast_context(data, event_ids)["mean"]
         return self.predict(data.X.loc[event_ids].to_numpy(float))
@@ -198,6 +208,8 @@ class RegisteredModel:
     def predict_uncertainty_context(self, data, event_ids):
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
+        if self.method_id in TEMPORAL_METHODS:
+            raise WorkbenchError("该时序方法尚未提供校准区间", "MODEL_UNCERTAINTY_UNSUPPORTED")
         if self.method_id in SEQUENCE_METHODS:
             return self._sequence.forecast_context(data, event_ids)
         return self.predict_uncertainty(data.X.loc[event_ids].to_numpy(float))

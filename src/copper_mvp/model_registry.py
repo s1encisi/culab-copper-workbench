@@ -12,10 +12,11 @@ from copper_mvp.specialized_registry import SPECIALIZED_METHODS, specialized_spe
 from copper_mvp.bart_registry import BART_METHODS, bart_spec
 from copper_mvp.symbolic_registry import SYMBOLIC_METHODS, symbolic_spec
 from copper_mvp.tabular_registry import TABULAR_METHODS, tabular_spec
+from copper_mvp.temporal_registry import TEMPORAL_METHODS, temporal_spec
 
 REGISTRY_VERSION = "model-registry.g2a.v1"
 LEGACY_METHOD_IDS = ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS")
-METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS + STATISTICAL_METHODS + SPECIALIZED_METHODS + BART_METHODS + SYMBOLIC_METHODS + TABULAR_METHODS
+METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS + STATISTICAL_METHODS + SPECIALIZED_METHODS + BART_METHODS + SYMBOLIC_METHODS + TABULAR_METHODS + TEMPORAL_METHODS
 FEATURE_COUNT = 114
 NUMERIC_COUNT = 110
 SEED = 20260905
@@ -39,6 +40,8 @@ IMPLEMENTATIONS = {
 
 
 def method_spec(method_id: str, seed: int = SEED) -> dict:
+    if method_id in TEMPORAL_METHODS:
+        return temporal_spec(method_id, seed)
     if method_id in TABULAR_METHODS:
         return tabular_spec(method_id, seed)
     if method_id in SYMBOLIC_METHODS:
@@ -73,8 +76,8 @@ def method_spec(method_id: str, seed: int = SEED) -> dict:
 
 
 def catalog() -> dict:
-    return {"schema_version": "model-registry.g6j.v1", "items": [method_spec(m) for m in METHOD_IDS],
-            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS) + len(STATISTICAL_METHODS) + len(SPECIALIZED_METHODS) + len(BART_METHODS) + len(SYMBOLIC_METHODS) + len(TABULAR_METHODS), "automatic_promotion": False,
+    return {"schema_version": "model-registry.g6k.v1", "items": [method_spec(m) for m in METHOD_IDS],
+            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS) + len(STATISTICAL_METHODS) + len(SPECIALIZED_METHODS) + len(BART_METHODS) + len(SYMBOLIC_METHODS) + len(TABULAR_METHODS) + len(TEMPORAL_METHODS), "automatic_promotion": False,
             "default_comparison_methods": list(LEGACY_METHOD_IDS)}
 
 
@@ -87,7 +90,7 @@ class ComparisonRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_methods(self):
-        if self.max_wall_seconds > 1800 and not any(m in BART_METHODS + TABULAR_METHODS for m in self.methods):
+        if self.max_wall_seconds > 1800 and not any(m in BART_METHODS + TABULAR_METHODS + TEMPORAL_METHODS for m in self.methods):
             raise ValueError("长时间预算仅用于已登记的 BART 或神经模型研究")
         if (len(set(self.methods)) != len(self.methods) or not self.methods
             or any(m not in METHOD_IDS for m in self.methods) or "Persistence" not in self.methods):

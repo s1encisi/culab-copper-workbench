@@ -91,6 +91,9 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
     if any(m in ("TabNet", "FTTransformer", "NODE") for m in request.methods):
         from copper_mvp.tabular_registry import tabular_source_hashes
         protocol["code_hashes"].update(tabular_source_hashes())
+    if any(method_spec(m, request.seed).get("input_kind") == "anchored_process_sequence" for m in request.methods):
+        from copper_mvp.temporal_registry import temporal_source_hashes
+        protocol["code_hashes"].update(temporal_source_hashes())
     write_json(output / "protocol.json", protocol)
     started = time.perf_counter()
     timings = []; artifacts = []; predictions = []; uncertainty_predictions = []
@@ -145,7 +148,9 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                     if model.spec["requires_fit"]:
                         clock = time.perf_counter()
                         try:
-                            if model.spec.get("input_kind") == "raw_event_sequence":
+                            if model.spec.get("input_kind") == "anchored_process_sequence":
+                                model.fit_context(data, train_ids, cutoff, max_wall_seconds=request.max_wall_seconds-(time.perf_counter()-started))
+                            elif model.spec.get("input_kind") == "raw_event_sequence":
                                 model.fit_context(data, train_ids, cutoff)
                             else:
                                 if method_id == "CatBoost":
@@ -192,7 +197,7 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                                         row.update({"q10": float(distribution["values"][i, 0, t]), "q50": float(distribution["values"][i, 1, t]),
                                                     "q90": float(distribution["values"][i, 2, t])})
                                     uncertainty_predictions.append(row)
-                        contextual = model.spec.get("input_kind") == "raw_event_sequence"
+                        contextual = model.spec.get("input_kind") in ("raw_event_sequence", "anchored_process_sequence")
                         timing["prediction_scope"] = "event_context_reconstruction" if contextual else "single_row_matrix_inference"
                         positions = np.unique(np.linspace(0, len(valid_ids) - 1, min(8 if contextual else 32, len(valid_ids))).astype(int))
                         for position in positions:
@@ -255,6 +260,11 @@ def load_registered_model(root: Path, manifest: dict, protocol: dict, method_id:
         tabular_runtime()
         if recorded["method_version"] != current["method_version"]:
             raise WorkbenchError("表格神经模型版本不兼容", "COMPARISON_MODEL_VERSION")
+    if recorded.get("input_kind") == "anchored_process_sequence":
+        from copper_mvp.neural_runtime import load_tensor_runtime
+        load_tensor_runtime()
+        if recorded["method_version"] != current["method_version"]:
+            raise WorkbenchError("时序神经模型版本不兼容", "COMPARISON_MODEL_VERSION")
     path = safe_artifact_path(root, entry["path"])
     if not path.is_file() or file_hash(path) != entry["sha256"]:
         raise WorkbenchError("比较模型工件哈希不匹配", "MODEL_HASH_MISMATCH")

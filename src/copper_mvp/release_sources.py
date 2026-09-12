@@ -136,6 +136,10 @@ class ArtifactSources:
             from copper_mvp.tabular_runtime import tabular_runtime
             tabular_runtime()
             dependencies.update({name: metadata.version(name) for name in family["dependencies"]})
+        if family.get("input_kind") == "anchored_process_sequence":
+            from copper_mvp.neural_runtime import load_tensor_runtime
+            load_tensor_runtime()
+            dependencies.update({name: metadata.version(name) for name in family["dependencies"]})
         descriptor=safe({"schema_version":"model-artifact-set.g5c.v1","source_kind":request.source_kind,"source_id":request.source_id,
             "method_id":method,"target":target,"unit":TARGET_UNITS[target],"seed":seed,"task_id":TASK_ID,
             "feature_columns":self.data.feature_columns,"feature_spec_hash":digest(self.data.feature_columns),
@@ -170,6 +174,9 @@ class ArtifactSources:
         if descriptor["method_id"] in ("TabNet", "FTTransformer", "NODE"):
             from copper_mvp.tabular_runtime import tabular_runtime
             tabular_runtime()
+        if descriptor.get("family", {}).get("input_kind") == "anchored_process_sequence":
+            from copper_mvp.neural_runtime import load_tensor_runtime
+            load_tensor_runtime()
         for name,version in descriptor["dependencies"].items():
             if metadata.version(name)!=version:
                 raise WorkbenchError("模型依赖版本与登记记录不一致","MODEL_VERSION_MISMATCH")
