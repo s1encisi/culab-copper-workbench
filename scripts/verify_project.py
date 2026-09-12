@@ -136,6 +136,9 @@ REQUIRED_PATHS = (
     "requirements-optimizer-methods.txt",
     "scripts/setup_optimizer_methods.ps1",
     "src/copper_mvp/platypus_methods.py",
+    "src/copper_mvp/hype.py",
+    "src/copper_mvp/scalarization.py",
+    "src/copper_mvp/scalarization_audit.py",
     "requirements-platypus-methods.txt",
     "scripts/setup_platypus_methods.ps1",
 )

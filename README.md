@@ -122,3 +122,9 @@ scripts/run_optimizer_comparison.py 可通过 --optimizers 显式选择这些方
 版本 0.15.0 接入 IBEA、Epsilon-MOEA、SMPSO、PAES、PESA-II 和 MO-CMA-ES。目录共 16 种算法，原三算法仍为默认比较范围。可选 Platypus 依赖通过 scripts/setup_platypus_methods.ps1 按固定版本与哈希安装。
 
 各方法复用共同初始样本及原始 F/G 求值账本；克隆候选按比较协议重新求值，尾批次使用剩余预算。IBEA 使用约束优先的指标比较，多目标 CMA-ES 按非支配层级和拥挤度更新分布。方法配置、结果与独立验收沿用现有优化比较接口。
+
+## G6e HypE 与标量化前沿
+
+版本 0.16.0 接入 HypE、Epsilon-Constraint、Augmented-Chebyshev、Weighted-Sum、NBI 和 NNC，目录共 22 个算法。HypE 采用双目标精确体积分配；五种标量化方法执行重复锚点与偏好子问题求解，联合计算 F/G 并计费复核返回点。
+
+scripts/run_optimizer_comparison.py 新增 --model-profile。NBI 的历史比较明确选择 DeltaRidge；原默认三算法和 DeltaHGB 配置保留。报告同时列出候选可行性、停止原因和内层收敛数，失败运行保留已计费求值账本。

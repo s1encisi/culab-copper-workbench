@@ -16,6 +16,7 @@ from copper_mvp.data import DataRepository
 from copper_mvp.modeling import ModelManager
 from copper_mvp.optimization_problem import build_problem
 from copper_mvp.optimizer_registry import OptimizerComparisonRequest
+from copper_mvp.scalarization_audit import audit_scalarization
 
 
 def hv2d(front, reference):
@@ -41,6 +42,7 @@ def audit_comparison(run_id):
     data = DataRepository() if request.mode == "plant" else None
     models = ModelManager(DEFAULT_RUNS_DIR, data) if data else None
     rows, extra_evaluations, hashes = [], 0, {}
+    scalar_audits, scalar_evaluations = [], 0
     prepared_cases = {}
     for record in comparison["results"]:
         case, seed, name = record["case"], record["seed"], record["optimizer_id"]
@@ -51,7 +53,7 @@ def audit_comparison(run_id):
         problem = json.loads((folder / "problem.json").read_text(encoding="utf-8"))
         if problem["signature"] != digest({k: v for k, v in problem.items() if k != "signature"}):
             raise ValueError("Problem signature mismatch")
-        frame = pd.read_csv(folder / "evaluations.csv")
+        frame = pd.read_csv(folder / "evaluations.csv", float_precision="round_trip")
         if len(frame) != saved["total_evaluations"] or len(frame) > request.total_budget:
             raise ValueError("Evaluation count differs from budget ledger")
         for phase, count in saved["evaluations"].items():
@@ -63,6 +65,10 @@ def audit_comparison(run_id):
         for key, value in prepared.specification().items():
             if problem.get(key) != value:
                 raise ValueError("Current physical problem differs from saved problem: " + key)
+        if "scalarization" in saved and saved["algorithm_executed"]:
+            scalar_audit = audit_scalarization(saved, frame, prepared)
+            scalar_evaluations += scalar_audit["extra_return_evaluations"]
+            scalar_audits.append({"case": case, "seed": seed, "optimizer": name, **scalar_audit})
         candidates = saved["candidates"]
         X = np.array([[c["variables"][v["name"]] for v in problem["variables"]] for c in candidates])
         F = np.array([[c["f1"], c["f2"]] for c in candidates]).reshape(-1, 2)
@@ -117,15 +123,17 @@ def audit_comparison(run_id):
                         "elapsed_ratio_median": float(np.median(ratios)),
                         "elapsed_ms_p50": float(np.quantile([r["elapsed_ms"] for r in group], 0.5)),
                         "elapsed_ms_p95": float(np.quantile([r["elapsed_ms"] for r in group], 0.95))}
-    result = {"schema_version": "optimizer-independent-audit.g6c.v1", "run_id": run_id, "status": "passed", "runs": len(rows),
+    result = {"schema_version": "optimizer-independent-audit.g6e.v1", "run_id": run_id, "status": "passed", "runs": len(rows),
               "request": request.model_dump(mode="json"), "paired_baseline": "NSGA-II", "paired": paired, "rows": rows,
               "bootstrap": {"unit": "case_block_all_seeds_retained", "resamples": 2000, "seed": 20260912},
               "total_solver_evaluations": sum(r["total_evaluations"] for r in rows),
               "extra_independent_front_evaluations": extra_evaluations, "extra_problem_reference_evaluations": len(prepared_cases),
+              "extra_scalar_return_evaluations": scalar_evaluations, "scalarization_audits": scalar_audits,
               "audit_elapsed_ms": (perf_counter() - started) * 1000, "source_hashes": hashes,
-              "auditor_sha256": file_hash(Path(__file__)), "automatic_promotion": False}
+              "auditor_sha256": file_hash(Path(__file__)),
+              "auditor_dependencies": {"scalarization_audit.py": file_hash(Path(__file__).resolve().parents[1]/"src/copper_mvp/scalarization_audit.py")}, "automatic_promotion": False}
     write_json(root / "independent_audit.json", result)
-    return {k: v for k, v in result.items() if k not in ("rows", "source_hashes")}
+    return {k: v for k, v in result.items() if k not in ("rows", "source_hashes", "scalarization_audits")}
 
 
 if __name__ == "__main__":

@@ -24,12 +24,13 @@ from pymoo.operators.mutation.pm import PM
 
 from copper_mvp.common import PROJECT_ROOT, WorkbenchError
 
-EXTENDED_OPTIMIZERS = ("NSGA-III", "MOEA-D", "RVEA", "AGE-MOEA", "C-TAEA", "GDE3", "Omni-Optimizer")
+EXTENDED_OPTIMIZERS = ("NSGA-III", "MOEA-D", "RVEA", "AGE-MOEA", "C-TAEA", "GDE3", "Omni-Optimizer", "HypE")
 METHOD_VERSION = "g6c.fixed.v1"
 
 
 def optimizer_method_spec(name):
     descriptions = {
+        "HypE": ("O15", "k-dependent hypervolume allocation for mating and split-front deletion", "adapted_feasibility_first"),
         "NSGA-III": ("O01", "reference-direction survival after non-dominated sorting", "native_feasibility_first"),
         "MOEA-D": ("O03", "Tchebycheff decomposition and neighborhood replacement", "adapted_feasibility_first_neighbor_replacement"),
         "RVEA": ("O06", "angle-penalized distance and adaptive reference vectors", "native_feasibility_first"),
@@ -57,11 +58,14 @@ def optimizer_method_spec(name):
                           zero_objective_span="retain_previous_reference_vectors")
     if name == "Omni-Optimizer":
         parameters.update(delta=0.001, objective_crowding=True, decision_crowding=True)
+    if name == "HypE":
+        parameters.update(hypervolume="exact_2D_cell_integral", reference=[1.1, 1.1],
+                          mating_k="population_size", survival_k="current_front_size_minus_slots", ties="seeded_random")
     dependencies = {"pymoo": "0.6.2"}
     if name == "AGE-MOEA":
         dependencies.update(numba="0.61.2", llvmlite="0.44.0")
     return {"optimizer_id": name, "display_name": "MOEA/D" if name == "MOEA-D" else name,
-            "design_id": design_id, "method_version": METHOD_VERSION, "mechanism": mechanism,
+            "design_id": design_id, "method_version": "g6e.hype.v1" if name == "HypE" else METHOD_VERSION, "mechanism": mechanism,
             "constraint_handling": constraint_handling, "parameters": parameters, "dependencies": dependencies}
 
 
@@ -147,6 +151,9 @@ def make_extended_optimizer(name, population, n_var):
     directions = np.column_stack((u, 1 - u))
     common = {"sampling": population, "crossover": SBX(prob=0.9, eta=15),
               "mutation": PM(prob=1.0, prob_var=1 / n_var, eta=20)}
+    if name == "HypE":
+        from copper_mvp.hype import HypE
+        return HypE(reference=[1.1, 1.1], pop_size=64, eliminate_duplicates=True, **common)
     if name == "NSGA-III":
         return NSGA3(ref_dirs=directions, pop_size=64, eliminate_duplicates=True, **common)
     if name == "MOEA-D":

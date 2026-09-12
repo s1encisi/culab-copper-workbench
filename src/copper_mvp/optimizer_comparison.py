@@ -24,6 +24,7 @@ from copper_mvp.optimization import nondominated
 from copper_mvp.optimization_problem import build_problem
 from copper_mvp.optimizer_methods import EXTENDED_OPTIMIZERS, make_extended_optimizer, optimizer_method_spec
 from copper_mvp.platypus_methods import PLATYPUS_OPTIMIZERS, PlatypusAdapter, platypus_method_spec
+from copper_mvp.scalarization import SCALAR_OPTIMIZERS, ScalarizationAdapter, scalarization_spec
 
 TOLERANCE = 1e-8
 
@@ -120,6 +121,8 @@ def make_optimizer(name, population, scale, n_var):
         return make_extended_optimizer(name, population, n_var)
     if name in PLATYPUS_OPTIMIZERS:
         return PlatypusAdapter(name, population, scale)
+    if name in SCALAR_OPTIMIZERS:
+        return ScalarizationAdapter(name, population, scale)
     raise WorkbenchError("没有该优化器", "OPTIMIZER_NOT_FOUND")
 
 
@@ -137,16 +140,29 @@ def metric_configuration(prepared, pilot_f):
 def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progress=lambda detail: None):
     started = perf_counter()
     output = Path(output); output.mkdir(parents=True, exist_ok=True)
-    if (output / "result.json").exists():
-        raise WorkbenchError("该优化运行已有结果", "OPTIMIZER_RUN_EXISTS")
+    if (output / "result.json").exists() or (output / "failure.json").exists():
+        raise WorkbenchError("该优化运行已有结果或失败记录", "OPTIMIZER_RUN_EXISTS")
     evaluator = EvaluationService(prepared, budget)
+    try:
+        return _run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progress, evaluator, started)
+    except Exception as exc:
+        evaluator.save(output)
+        completed_rows = sum(len(group["X"]) for group in evaluator.groups)
+        write_json(output / "failure.json", {"status": "failed", "optimizer_id": optimizer_id, "seed": seed,
+            "error_code": getattr(exc, "code", type(exc).__name__), "charged_evaluations": evaluator.counts,
+            "total_evaluations": evaluator.used, "completed_evaluation_rows": completed_rows,
+            "charged_without_saved_values": evaluator.used-completed_rows, "elapsed_ms": (perf_counter()-started)*1000})
+        raise
+
+
+def _run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progress, evaluator, started):
     dimensions = len(prepared.lower)
     pilot_unit = np.array(list(product((0., 0.5, 1.), repeat=dimensions))).reshape(-1, dimensions) if dimensions else np.empty((1, 0))
     pilot_x = prepared.lower + pilot_unit * (prepared.upper - prepared.lower)
     pilot_f, pilot_g, _ = evaluator.evaluate(pilot_x, "pilot")
     metric = metric_configuration(prepared, pilot_f)
     spec = {**prepared.specification(), "metric": metric, "evaluator_version": "vector-evaluator.g2b.v1",
-            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py", "optimizer_methods.py", "platypus_methods.py")},
+            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py", "optimizer_methods.py", "platypus_methods.py", "hype.py", "scalarization.py")},
             "reference_front_hash": digest(prepared.reference_front.tolist()) if prepared.reference_front is not None else None,
             "budget_mode": "total_equivalent_v2", "total_budget": budget, "cache_policy": "disabled_for_comparison"}
     signature = digest(spec)
@@ -159,14 +175,14 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
         initial_x = rng.uniform(prepared.lower, prepared.upper, size=(64 - len(pilot_x), dimensions))
         initial_f, initial_g, _ = evaluator.evaluate(initial_x, "initial")
         X = np.vstack((pilot_x, initial_x)); F = np.vstack((pilot_f, initial_f)); G = np.vstack((pilot_g, initial_g))
-        objective_scale = np.asarray(metric["scale"]) if optimizer_id in EXTENDED_OPTIMIZERS + PLATYPUS_OPTIMIZERS else None
+        objective_scale = np.asarray(metric["scale"]) if optimizer_id in EXTENDED_OPTIMIZERS + PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS else None
         search_f = F if objective_scale is None else F / objective_scale
         population = Population.new(X=X, F=search_f, G=G - TOLERANCE, H=np.empty((len(X), 0)))
         population.apply(lambda individual: individual.evaluated.update(("F", "G", "H")))
         algorithm = make_optimizer(optimizer_id, population, metric["scale"], dimensions)
         termination = ("n_gen", 1 + int(np.ceil((budget - reserve - evaluator.used) / 64))) if optimizer_id == "RVEA" else ("n_eval", budget)
         algorithm.setup(RegisteredProblem(evaluator, objective_scale), termination=termination, seed=seed, verbose=False)
-        if optimizer_id in PLATYPUS_OPTIMIZERS:
+        if optimizer_id in PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS:
             algorithm.deadline = started + seconds
         algorithm.next()  # Supplied initial values are already evaluated and charged.
         stop = "total_budget"
@@ -178,7 +194,7 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
             if perf_counter() - started >= seconds:
                 stop = "time_budget"
                 break
-            algorithm.n_offsprings = min(1 if optimizer_id in ("SMS-EMOA", "MOEA-D") else 64, remaining)
+            algorithm.n_offsprings = remaining if optimizer_id in SCALAR_OPTIMIZERS else min(1 if optimizer_id in ("SMS-EMOA", "MOEA-D") else 64, remaining)
             previous = evaluator.used
             algorithm.next()
             if evaluator.used == previous:
@@ -187,7 +203,7 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
             if evaluator.used - last_report >= 64:
                 progress({"optimizer": optimizer_id, "seed": seed, "evaluations": evaluator.used, "budget": budget})
                 last_report = evaluator.used
-        if optimizer_id in PLATYPUS_OPTIMIZERS and algorithm.stop_reason is not None:
+        if optimizer_id in PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS and algorithm.stop_reason is not None:
             stop = algorithm.stop_reason
     X, F, G = evaluator.search_points()
     feasible = np.flatnonzero(np.all(G <= TOLERANCE, axis=1))
@@ -245,6 +261,9 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
         result["optimizer_spec"] = optimizer_method_spec(optimizer_id)
     elif optimizer_id in PLATYPUS_OPTIMIZERS:
         result["optimizer_spec"] = platypus_method_spec(optimizer_id)
+    elif optimizer_id in SCALAR_OPTIMIZERS:
+        result["optimizer_spec"] = scalarization_spec(optimizer_id)
+        result["scalarization"] = algorithm.details() if dimensions else {"status": "fixed_reference", "jobs": []}
     evaluator.save(output)
     write_json(output / "result.json", result)
     return result
@@ -280,14 +299,20 @@ def compare_optimizers(data, models, request, output, progress=lambda detail: No
                "runs": len(results), "results": results, "automatic_promotion": False}
     write_json(output / "comparison.json", summary)
     rows = [{k: r[k] for k in ("case", "event_id", "optimizer_id", "seed", "status", "hv", "igd_plus", "total_evaluations",
-                             "feasible_rate", "decision_front_points", "objective_front_points", "verified_front_points", "elapsed_ms")} for r in results]
+                             "feasible_rate", "decision_front_points", "objective_front_points", "verified_front_points", "elapsed_ms", "stop_reason", "algorithm_executed")} for r in results]
+    for row, result in zip(rows, results):
+        detail = result.get("scalarization")
+        row["scalarization_converged"] = detail["converged_subproblems"] if detail and "converged_subproblems" in detail else None
+        row["scalarization_subproblems"] = len(detail["jobs"]) if detail else None
     pd.DataFrame(rows).to_csv(output / "metrics.csv", index=False)
-    report = "# G2b 优化器比较\n\n"
+    report = "# 注册优化方法比较\n\n"
     report += f"工况 {summary['cases']} 个，优化器 {len(request.optimizers)} 个，种子 {len(request.seeds)} 个。每次总求值上限 {request.total_budget}，包含参考、探测、初始种群、搜索和复算。\n\n"
-    report += "| 工况 | 优化器 | 种子 | 状态 | HV | IGD+ | 求值 | 复核前沿点 | 耗时(ms) |\n|---|---|---:|---|---:|---:|---:|---:|---:|\n"
+    report += "| 工况 | 优化器 | 种子 | 候选状态 | 停止原因 | 子问题收敛 | HV | IGD+ | 求值 | 复核前沿点 | 耗时(ms) |\n|---|---|---:|---|---|---|---:|---:|---:|---:|---:|\n"
     for r in results:
         igd_text = f"{r['igd_plus']:.6g}" if r["igd_plus"] is not None else "无独立参考集"
-        report += f"| {r['case']} | {r['optimizer_id']} | {r['seed']} | {r['status']} | {r['hv']:.6g} | {igd_text} | {r['total_evaluations']} | {r['verified_front_points']} | {r['elapsed_ms']:.1f} |\n"
+        detail = r.get("scalarization")
+        convergence = f"{detail['converged_subproblems']}/{len(detail['jobs'])}" if detail and "converged_subproblems" in detail else "—"
+        report += f"| {r['case']} | {r['optimizer_id']} | {r['seed']} | {r['status']} | {r['stop_reason']} | {convergence} | {r['hv']:.6g} | {igd_text} | {r['total_evaluations']} | {r['verified_front_points']} | {r['elapsed_ms']:.1f} |\n"
     report += "\nHV 只在同一问题签名下比较。SMS-EMOA 采用单后代更新及固定参考点；目标点数和决策点数分别记录。工厂结果是既有模型中的局部情景，不改变执行资格。\n"
     (output / "report.md").write_text(report, encoding="utf-8")
     return summary
@@ -295,4 +320,5 @@ def compare_optimizers(data, models, request, output, progress=lambda detail: No
 
 def optimizer_software():
     import pymoo
-    return {"pymoo": pymoo.__version__, "native_threads": 1}
+    import scipy
+    return {"pymoo": pymoo.__version__, "scipy": scipy.__version__, "native_threads": 1}
