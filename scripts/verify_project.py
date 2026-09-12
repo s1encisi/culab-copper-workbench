@@ -110,6 +110,11 @@ REQUIRED_PATHS = (
     "src/copper_mvp/ensemble_studies.py",
     "src/copper_mvp/api_ensembles.py",
     "scripts/run_ensemble_study.py",
+    "src/copper_mvp/release_contracts.py",
+    "src/copper_mvp/release_sources.py",
+    "src/copper_mvp/model_lifecycle.py",
+    "src/copper_mvp/api_releases.py",
+    "scripts/verify_model_lifecycle.py",
 )
 
 FORBIDDEN_DIR_NAMES = {
