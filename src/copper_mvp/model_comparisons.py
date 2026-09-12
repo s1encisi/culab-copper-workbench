@@ -79,6 +79,9 @@ class ComparisonService:
         if "SymbolicRegression" in request.methods:
             from copper_mvp.symbolic_registry import symbolic_source_hashes
             fingerprint_data["symbolic_adapters"] = symbolic_source_hashes()
+        if any(m in ("TabNet", "FTTransformer", "NODE") for m in request.methods):
+            from copper_mvp.tabular_registry import tabular_source_hashes
+            fingerprint_data["tabular_adapters"] = tabular_source_hashes()
         fingerprint = digest(fingerprint_data)
         with self.lock:
             if (root / "state.json").exists():

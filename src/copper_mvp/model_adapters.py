@@ -18,6 +18,7 @@ from copper_mvp.statistical_registry import STATISTICAL_METHODS, SEQUENCE_METHOD
 from copper_mvp.specialized_registry import SPECIALIZED_METHODS
 from copper_mvp.bart_registry import BART_METHODS
 from copper_mvp.symbolic_registry import SYMBOLIC_METHODS
+from copper_mvp.tabular_registry import TABULAR_METHODS
 
 
 def preprocess():
@@ -64,6 +65,13 @@ class RegisteredModel:
         y = np.asarray(y, dtype=float)
         if y.shape != (len(X), 2) or not np.isfinite(y).all():
             raise WorkbenchError("训练目标必须是有限的 Cu/As 双列矩阵", "MODEL_TARGET_VALUES")
+        if self.method_id in TABULAR_METHODS:
+            from copper_mvp.tabular_models import TabularModel
+            self._tabular = TabularModel(self.method_id, self.seed).fit(X, y, weight, max_wall_seconds=max_wall_seconds)
+            self.models, self.fit_warnings = self._tabular.models, self._tabular.fit_warnings
+            self.fit_metadata = self._tabular.fit_metadata
+            self.is_fitted = True
+            return self
         if self.method_id in SYMBOLIC_METHODS:
             from copper_mvp.symbolic_models import SymbolicModel
             self._symbolic = SymbolicModel(self.seed).fit(X, y, weight, max_wall_seconds=max_wall_seconds)
@@ -135,7 +143,9 @@ class RegisteredModel:
         X = validate_X(X)
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
-        if self.method_id in SYMBOLIC_METHODS:
+        if self.method_id in TABULAR_METHODS:
+            result = self._tabular.predict(X)
+        elif self.method_id in SYMBOLIC_METHODS:
             result = self._symbolic.predict(X)
         elif self.method_id in BART_METHODS:
             result = self._bart.predict(X)

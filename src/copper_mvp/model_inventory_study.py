@@ -54,6 +54,9 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
     if "SymbolicRegression" in methods:
         from copper_mvp.symbolic_registry import SYMBOLIC_SOURCE_FILES
         source_files += SYMBOLIC_SOURCE_FILES
+    if any(m in ("TabNet", "FTTransformer", "NODE") for m in methods):
+        from copper_mvp.tabular_registry import TABULAR_SOURCE_FILES
+        source_files += TABULAR_SOURCE_FILES
     code_hashes = {p: file_hash(PROJECT_ROOT / p) for p in source_files}
     protocol = {
         "schema_version": "model-inventory-study.g6g.v1", "request_key": request_key,
