@@ -6,12 +6,12 @@
 
 - [main](https://github.com/s1encisi/culab-copper-workbench/tree/main)：升级前基线，固定为 `34933e0`。
 - [codex/system-upgrade](https://github.com/s1encisi/culab-copper-workbench/tree/codex/system-upgrade)：升级汇总入口，本次整理后与 `codex/g6g` 指向同一最新提交。
-- [codex/g6g](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6g)：当前开发分支，**进行中**。专用预测模型的正式时间折比较、完整 Cubist 接口验收仍待完成。
+- [codex/g6g](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6g)：当前已验证阶段，已完成五折、五种子比较及工件/接口回放；完整升级继续按后续阶段推进。
 - G7、G8 尚未开始；开始实施时再从其所依赖的阶段建立分支。
 
 ## 阶段顺序与差异
 
-“已归档”表示这个源码节点已保存，不代表整轮升级全部验收完成。G1 至 G5a 保留原有提交；G5b 至 G6f 根据当时保存的文件哈希恢复，130 个阶段文件版本全部一致。G6g 保存当前工作现场。
+“已归档”表示这个源码节点已保存，不代表整轮升级全部验收完成。G1 至 G5a 保留原有提交；G5b 至 G6f 根据当时保存的文件哈希恢复，130 个阶段文件版本全部一致。G6g 的源代码和验收已保存；后续 BART、符号与神经预测方法、共享校准和知识能力继续分阶段实现。
 
 | 阶段 | 分支 | 继承阶段 | 改动主题 | 阶段源码提交 | 本阶段差异 | 状态 |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -30,7 +30,7 @@
 | G6d | [`codex/g6d`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6d) | G6c | Platypus 优化方法扩展 | [`79f75c7`](https://github.com/s1encisi/culab-copper-workbench/commit/79f75c7946f26de8646f8187c3dd626627bd762f) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6c...codex/g6d) | 已归档 |
 | G6e | [`codex/g6e`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6e) | G6d | HypE 与标量化前沿 | [`0d4d3e5`](https://github.com/s1encisi/culab-copper-workbench/commit/0d4d3e5a9d09a582d978055fe887bfbb4ce70e84) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6d...codex/g6e) | 已归档 |
 | G6f | [`codex/g6f`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6f) | G6e | 贝叶斯多目标优化与独立复核 | [`941e658`](https://github.com/s1encisi/culab-copper-workbench/commit/941e6585e6e2ad5ac7c3e3ed197f3be7906a648f) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6e...codex/g6f) | 已归档 |
-| G6g | [`codex/g6g`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6g) | G6f | CatBoost、NGBoost、EBM、Cubist 与概率评分 | [`3a7e8fd`](https://github.com/s1encisi/culab-copper-workbench/commit/3a7e8fdcb02bb003361ba2825a496e895aea22f3) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6f...codex/g6g) | 进行中 |
+| G6g | [`codex/g6g`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6g) | G6f | CatBoost、NGBoost、EBM、Cubist 与概率评分 | [`31d6cab`](https://github.com/s1encisi/culab-copper-workbench/commit/31d6cab4cf0db4aab7309cba94d350a5f3bc88af) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6f...codex/g6g) | 已归档 |
 
 ## 后续使用
 
@@ -42,6 +42,6 @@
 ## 本次整理的验证范围
 
 - 拟上传历史的 17 个源码树、345 个文本文件版本通过上传检查；279 个 Python/TOML 文件版本通过语法解析。新增导航文档会再纳入推送前检查。
-- 当前 G6g 已有的 4 项组件测试通过。正式研究比较尚未完成，分支状态仍为进行中。
+- G6g 正式研究与工件验收已完成：120 个拟合工件、800 个回放点、8 组生命周期案例通过验证；完整回归 242 项通过。
 - G3 的真实付费模型调用验收仍待单独授权；分支存档不代表该项已执行。
 - Excel、行级数据、模型、密钥、内部设计文档与原始验收证据继续保留在本地被忽略的目录中。

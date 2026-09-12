@@ -32,6 +32,7 @@ REQUIRED_PATHS = (
     "requirements-cubist.txt",
     "scripts/setup_specialized_models.ps1",
     "scripts/run_model_inventory_study.py",
+    "scripts/verify_model_inventory.py",
     ".env.example",
     "README.md",
     "pyproject.toml",

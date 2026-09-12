@@ -57,7 +57,7 @@ G2a 不写入旧模型目录或自动换模，当前通过脚本与新 API 使�
 
 本轮升级按 G 阶段分别保存为递进分支，每个分支继承前一阶段。查看 [升级分支导航](UPGRADE_BRANCHES.md)，可直接打开各阶段源码、提交和相邻阶段差异。
 
-codex/system-upgrade 是升级汇总入口；当前开发在 codex/g6g，状态为进行中。main 保留改进前的 34933e0 基线。完整设计与内部验收材料继续保存在本地受保护目录。
+codex/system-upgrade 是升级汇总入口；当前已验证阶段为 codex/g6g，后续改进分别建立阶段分支。main 保留改进前的 34933e0 基线。完整设计与内部验收材料继续保存在本地受保护目录。
 
 ## G2b 优化器比较
 
@@ -138,3 +138,11 @@ scripts/run_optimizer_comparison.py 新增 --model-profile。NBI 的历史比较
 版本 0.17.0 接入 ParEGO、NEHVI、MES 和 JES，采用项目内固定 CPU 张量运行时。每次拟合高斯过程，使用原生 BoTorch 采集函数选择候选，并保存模型工件、采集开销和实际求值账本。
 
 ParEGO/NEHVI 支持已接入的约束概率路径；MES/JES 首版通过 --benchmark-problem unconstrained_quadratic 显式运行无约束数学问题。后者不会接受工厂 As 约束请求。原默认三算法及默认有约束数学问题保持不变。
+
+## G6g 专用预测方法
+
+版本 0.18.0 接入 CatBoost、NGBoost、EBM 和 Cubist，目录共 29 种预测方法。CatBoost 使用输入时间顺序；NGBoost 提供正态边际分布；EBM 保留加性形状和交互项；Cubist 提供规则内的线性模型。
+
+运行 scripts/run_model_inventory_study.py，可通过既有模型比较服务执行固定时间折、多种子研究。报告包含误差、配对时间块区间、工况分层、NLL/CRPS/WIS 和资源记录。scripts/verify_model_inventory.py 重载保存工件，核对预测回放、EBM 加性重构及跨种子稳定性、Cubist 规则，以及模型登记和影子预测。
+
+可选依赖使用 scripts/setup_specialized_models.ps1 按固定版本和哈希安装。原始预测、模型、解释与验收证据保存在本地 runs/ 目录，模型工件记录实际依赖及许可证。
