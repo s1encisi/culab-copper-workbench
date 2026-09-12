@@ -116,3 +116,9 @@ scripts/run_routing_replay.py 提供本地执行入口；必需参数为 --compa
 版本 0.14.0 增加 NSGA-III、MOEA/D、RVEA、AGE-MOEA、C-TAEA、GDE3 和 Omni-Optimizer。目录共 10 种方法，覆盖设计中的 9 个新增优化方法；原三算法仍为默认比较范围。
 
 scripts/run_optimizer_comparison.py 可通过 --optimizers 显式选择这些方法，MOEA/D 的接口标识为 MOEA-D。新方法使用共享初始点、固定目标尺度和完整求值预算；MOEA/D 显式执行约束优先的邻域替换，GDE3 支持最后不足一代的预算。AGE-MOEA 可选依赖通过 scripts/setup_optimizer_methods.ps1 安装到本地运行目录。
+
+## G6d 指标、档案与群体搜索方法
+
+版本 0.15.0 接入 IBEA、Epsilon-MOEA、SMPSO、PAES、PESA-II 和 MO-CMA-ES。目录共 16 种算法，原三算法仍为默认比较范围。可选 Platypus 依赖通过 scripts/setup_platypus_methods.ps1 按固定版本与哈希安装。
+
+各方法复用共同初始样本及原始 F/G 求值账本；克隆候选按比较协议重新求值，尾批次使用剩余预算。IBEA 使用约束优先的指标比较，多目标 CMA-ES 按非支配层级和拥挤度更新分布。方法配置、结果与独立验收沿用现有优化比较接口。

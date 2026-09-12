@@ -23,6 +23,7 @@ from copper_mvp.common import WorkbenchError, digest, file_hash, safe, utc_now, 
 from copper_mvp.optimization import nondominated
 from copper_mvp.optimization_problem import build_problem
 from copper_mvp.optimizer_methods import EXTENDED_OPTIMIZERS, make_extended_optimizer, optimizer_method_spec
+from copper_mvp.platypus_methods import PLATYPUS_OPTIMIZERS, PlatypusAdapter, platypus_method_spec
 
 TOLERANCE = 1e-8
 
@@ -117,6 +118,8 @@ def make_optimizer(name, population, scale, n_var):
         return SMSEMOA(**kwargs, n_offsprings=1, normalize=False, survival=FixedReferenceSurvival(scale))
     if name in EXTENDED_OPTIMIZERS:
         return make_extended_optimizer(name, population, n_var)
+    if name in PLATYPUS_OPTIMIZERS:
+        return PlatypusAdapter(name, population, scale)
     raise WorkbenchError("没有该优化器", "OPTIMIZER_NOT_FOUND")
 
 
@@ -143,7 +146,7 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
     pilot_f, pilot_g, _ = evaluator.evaluate(pilot_x, "pilot")
     metric = metric_configuration(prepared, pilot_f)
     spec = {**prepared.specification(), "metric": metric, "evaluator_version": "vector-evaluator.g2b.v1",
-            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py", "optimizer_methods.py")},
+            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py", "optimizer_methods.py", "platypus_methods.py")},
             "reference_front_hash": digest(prepared.reference_front.tolist()) if prepared.reference_front is not None else None,
             "budget_mode": "total_equivalent_v2", "total_budget": budget, "cache_policy": "disabled_for_comparison"}
     signature = digest(spec)
@@ -156,13 +159,15 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
         initial_x = rng.uniform(prepared.lower, prepared.upper, size=(64 - len(pilot_x), dimensions))
         initial_f, initial_g, _ = evaluator.evaluate(initial_x, "initial")
         X = np.vstack((pilot_x, initial_x)); F = np.vstack((pilot_f, initial_f)); G = np.vstack((pilot_g, initial_g))
-        objective_scale = np.asarray(metric["scale"]) if optimizer_id in EXTENDED_OPTIMIZERS else None
+        objective_scale = np.asarray(metric["scale"]) if optimizer_id in EXTENDED_OPTIMIZERS + PLATYPUS_OPTIMIZERS else None
         search_f = F if objective_scale is None else F / objective_scale
         population = Population.new(X=X, F=search_f, G=G - TOLERANCE, H=np.empty((len(X), 0)))
         population.apply(lambda individual: individual.evaluated.update(("F", "G", "H")))
         algorithm = make_optimizer(optimizer_id, population, metric["scale"], dimensions)
         termination = ("n_gen", 1 + int(np.ceil((budget - reserve - evaluator.used) / 64))) if optimizer_id == "RVEA" else ("n_eval", budget)
         algorithm.setup(RegisteredProblem(evaluator, objective_scale), termination=termination, seed=seed, verbose=False)
+        if optimizer_id in PLATYPUS_OPTIMIZERS:
+            algorithm.deadline = started + seconds
         algorithm.next()  # Supplied initial values are already evaluated and charged.
         stop = "total_budget"
         last_report = 0
@@ -182,6 +187,8 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
             if evaluator.used - last_report >= 64:
                 progress({"optimizer": optimizer_id, "seed": seed, "evaluations": evaluator.used, "budget": budget})
                 last_report = evaluator.used
+        if optimizer_id in PLATYPUS_OPTIMIZERS and algorithm.stop_reason is not None:
+            stop = algorithm.stop_reason
     X, F, G = evaluator.search_points()
     feasible = np.flatnonzero(np.all(G <= TOLERANCE, axis=1))
     front_indices = feasible[nondominated(F[feasible])] if len(feasible) else np.array([], dtype=int)
@@ -236,6 +243,8 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
         "candidates": candidates, "warnings": prepared.warnings, "execution_authorized": False})
     if optimizer_id in EXTENDED_OPTIMIZERS:
         result["optimizer_spec"] = optimizer_method_spec(optimizer_id)
+    elif optimizer_id in PLATYPUS_OPTIMIZERS:
+        result["optimizer_spec"] = platypus_method_spec(optimizer_id)
     evaluator.save(output)
     write_json(output / "result.json", result)
     return result

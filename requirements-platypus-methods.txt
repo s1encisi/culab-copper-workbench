@@ -1,0 +1,2 @@
+# Optional Platypus methods; public PyPI wheel, fixed version and SHA-256.
+Platypus-Opt==1.4.1 --hash=sha256:9c22883a3ffd91bd3a6dfb75412fc6b80368850fdb9b24f9e301a8cbf160fdda

@@ -135,6 +135,9 @@ REQUIRED_PATHS = (
     "scripts/audit_optimizer_comparison.py",
     "requirements-optimizer-methods.txt",
     "scripts/setup_optimizer_methods.ps1",
+    "src/copper_mvp/platypus_methods.py",
+    "requirements-platypus-methods.txt",
+    "scripts/setup_platypus_methods.ps1",
 )
 
 FORBIDDEN_DIR_NAMES = {

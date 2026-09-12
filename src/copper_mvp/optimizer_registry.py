@@ -7,9 +7,10 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from copper_mvp.contracts import RunRequest
 
 from copper_mvp.optimizer_methods import EXTENDED_OPTIMIZERS, optimizer_method_spec
+from copper_mvp.platypus_methods import PLATYPUS_OPTIMIZERS, platypus_method_spec
 
 LEGACY_OPTIMIZERS = ("NSGA-II", "SPEA2", "SMS-EMOA")
-OPTIMIZERS = LEGACY_OPTIMIZERS + EXTENDED_OPTIMIZERS
+OPTIMIZERS = LEGACY_OPTIMIZERS + EXTENDED_OPTIMIZERS + PLATYPUS_OPTIMIZERS
 
 
 def optimizer_catalog():
@@ -18,7 +19,7 @@ def optimizer_catalog():
         ("SPEA2", "strength fitness, density and archive truncation", 64),
         ("SMS-EMOA", "fixed-reference hypervolume contribution survival", 1),
     )
-    return {"schema_version": "optimizer-registry.g6c.v1", "new_optimizer_count": 9, "items": [
+    return {"schema_version": "optimizer-registry.g6d.v1", "new_optimizer_count": len(OPTIMIZERS) - 1, "items": [
         {"optimizer_id": name, "mechanism": mechanism, "package": "pymoo", "package_version": pymoo.__version__,
          "population": 64, "offspring_batch": offspring, "variables": "continuous", "objectives": 2,
          "inequality_constraints": True, "status": "registered", "execution_authorized": False}
@@ -26,7 +27,10 @@ def optimizer_catalog():
         {**optimizer_method_spec(name), "population": 64, "offspring_batch": 1 if name == "MOEA-D" else 64,
          "variables": "continuous", "objectives": 2, "inequality_constraints": True,
          "package": "pymoo", "package_version": pymoo.__version__, "status": "registered", "execution_authorized": False}
-        for name in EXTENDED_OPTIMIZERS]}
+        for name in EXTENDED_OPTIMIZERS] + [
+        {**platypus_method_spec(name), "population": 1 if name == "PAES" else 64,
+         "offspring_batch": 1 if name == "PAES" else 2 if name == "Epsilon-MOEA" else 64}
+        for name in PLATYPUS_OPTIMIZERS]}
 
 
 class OptimizerComparisonRequest(BaseModel):
