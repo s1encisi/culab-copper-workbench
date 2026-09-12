@@ -1,8 +1,15 @@
 """Explicit CPU configurations for three structurally distinct tabular neural models."""
 from copper_mvp.common import PROJECT_ROOT,digest,file_hash
 TABULAR_METHODS=("TabNet","FTTransformer","NODE")
-TABULAR_VERSION="g6j.tabular.v1"
+TABULAR_VERSION="g6j.tabular.v3"
 TRAINING={"epochs":60,"batch_size":128,"learning_rate":0.001,"weight_decay":0.0001,"gradient_clip":5.0}
+LEARNING_RATES={"TabNet":0.02,"FTTransformer":0.001,"NODE":0.001}
+
+
+def training_parameters(method):
+    return {**TRAINING,"learning_rate":LEARNING_RATES[method]}
+
+
 ARCHITECTURES={
     "TabNet":{"n_d":8,"n_a":8,"n_steps":3,"cat_emb_dim":2,"n_shared":2,"n_independent":2,
               "virtual_batch_size":64,"gamma":1.3,"lambda_sparse":0.001},
@@ -14,7 +21,7 @@ ARCHITECTURES={
 TABULAR_PACKAGES={"pytorch-tabnet":"4.1.0","rtdl-revisiting-models":"0.0.2","entmax":"1.3"}
 TABULAR_SOURCE_FILES=tuple("src/copper_mvp/"+p for p in (
     "tabular_registry.py","tabular_runtime.py","tabular_inputs.py","tabular_networks.py",
-    "tabular_models.py","node_network.py","neural_runtime.py"))+("requirements-tabular-neural.txt",)
+    "tabular_models.py","node_network.py","neural_runtime.py","tabular_controls.py"))+("requirements-tabular-neural.txt","scripts/run_neural_controls.py","scripts/run_tabular_benchmark.py")
 
 
 def tabular_source_hashes():
@@ -30,7 +37,7 @@ def tabular_spec(method,seed):
         "feature_count":114,"multi_output":"joint_two_target_head","seed":seed,
         "target_transform":"delta_from_current","target_scaling":"training_only_standard_delta",
         "preprocessing":"train_median_stable_scale; all_numeric_missing_masks; explicit_mode_codes",
-        "preset_parameters":{"training":dict(TRAINING),"architecture":dict(ARCHITECTURES[method])},
+        "preset_parameters":{"training":training_parameters(method),"architecture":dict(ARCHITECTURES[method])},
         "sample_weight":"weighted_two_target_MSE","capabilities":{"sample_weight":True,"uncertainty":"unsupported"},
         "uncertainty":"unsupported","internal_validation":"disabled","early_stopping":False,
         "targets":[{"name":"cu","unit":"g/L"},{"name":"as","unit":"mg/L"}],

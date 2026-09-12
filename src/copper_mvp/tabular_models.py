@@ -5,7 +5,7 @@ from sklearn.preprocessing import StandardScaler
 from copper_mvp.common import WorkbenchError
 from copper_mvp.neural_runtime import tensor_random_scope
 from copper_mvp.tabular_runtime import tabular_runtime
-from copper_mvp.tabular_registry import TRAINING,ARCHITECTURES
+from copper_mvp.tabular_registry import TRAINING,ARCHITECTURES,training_parameters
 from copper_mvp.tabular_inputs import NeuralInputs
 
 
@@ -18,16 +18,19 @@ def batches(order,size):
 
 
 class TabularModel:
-    def __init__(self,method,seed,training=None):
+    def __init__(self,method,seed,training=None,reference=False):
         self.method_id,self.seed=method,seed
-        self.training=dict(TRAINING if training is None else training)
+        self.training=dict(training_parameters(method) if training is None else training)
         self.architecture=dict(ARCHITECTURES[method])
         self.fit_warnings=[]
+        self.reference=reference
+        self.network_method=method
 
     def fit(self,X,y,sample_weight=None,max_wall_seconds=None):
         torch=tabular_runtime()
-        from copper_mvp.tabular_networks import TabularNetwork
+        from copper_mvp.tabular_networks import TabularNetwork,matched_mlp_architecture
         X,y=np.asarray(X,float),np.asarray(y,float)
+        self.architecture=dict(ARCHITECTURES[self.method_id])
         self.preprocessor=NeuralInputs()
         numerical,categories=self.preprocessor.fit_transform(X)
         self.target_scaler=StandardScaler().fit(y-X[:,:2])
@@ -37,6 +40,12 @@ class TabularModel:
         started=time.perf_counter();history=[];updates=0;skipped=0
         with tensor_random_scope(torch,self.seed):
             network=TabularNetwork(self.method_id,self.architecture)
+            parameter_budget=sum(p.numel() for p in network.parameters())
+            if self.reference:
+                matched=matched_mlp_architecture(parameter_budget)
+                self.architecture={"hidden":matched["hidden"]}
+                self.network_method="MLPControl"
+                network=TabularNetwork(self.network_method,self.architecture)
             network.initialize(tensors[0],tensors[1])
             initial={name:parameter.detach().clone() for name,parameter in network.named_parameters()}
             optimizer=torch.optim.AdamW(network.parameters(),lr=self.training["learning_rate"],
@@ -74,7 +83,11 @@ class TabularModel:
             "optimizer_updates":updates,"zero_weight_batches_skipped":skipped,"training_history":history,
             "parameters":sum(p.numel() for p in network.parameters()),"parameter_max_changes":changes,
             "elapsed_seconds":time.perf_counter()-started,"device":"cpu","native_threads":1,
-            "validation_used":False,"early_stopping":False,"prediction_mode":"eval"}
+            "validation_used":False,"early_stopping":False,"prediction_mode":"eval",
+            "role":"parameter_matched_mlp_control" if self.reference else "candidate",
+            "reference_for":self.method_id if self.reference else None,
+            "parameter_budget":parameter_budget,
+            "parameter_budget_relative_difference":abs(sum(p.numel() for p in network.parameters())-parameter_budget)/parameter_budget}
         return self
 
     def __getstate__(self):
@@ -85,9 +98,9 @@ class TabularModel:
     def network(self):
         if not hasattr(self,"_network"):
             torch=tabular_runtime()
-            from copper_mvp.tabular_networks import TabularNetwork
+            from copper_mvp.tabular_networks import TabularNetwork,matched_mlp_architecture
             with tensor_random_scope(torch,self.seed):
-                self._network=TabularNetwork(self.method_id,self.architecture)
+                self._network=TabularNetwork(self.network_method,self.architecture)
             self._network.load_state_dict(self.state)
             self._network.eval()
         return self._network

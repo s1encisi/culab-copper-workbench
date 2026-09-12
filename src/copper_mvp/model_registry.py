@@ -87,8 +87,8 @@ class ComparisonRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_methods(self):
-        if self.max_wall_seconds > 1800 and not any(m in BART_METHODS for m in self.methods):
-            raise ValueError("长时间预算仅用于 BART 研究")
+        if self.max_wall_seconds > 1800 and not any(m in BART_METHODS + TABULAR_METHODS for m in self.methods):
+            raise ValueError("长时间预算仅用于已登记的 BART 或神经模型研究")
         if (len(set(self.methods)) != len(self.methods) or not self.methods
             or any(m not in METHOD_IDS for m in self.methods) or "Persistence" not in self.methods):
             raise ValueError("方法必须唯一、已注册，且包含 Persistence 参照")

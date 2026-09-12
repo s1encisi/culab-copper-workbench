@@ -25,6 +25,10 @@ class TabularNetwork(torch.nn.Module):
         elif method=="NODE":
             for key in ("selector","split","threshold_initialization"):options.pop(key)
             self.core=NodeNetwork(features=numeric_features+12,**options)
+        elif method=="MLPControl":
+            first,second=options["hidden"]
+            self.core=torch.nn.Sequential(torch.nn.Linear(numeric_features+12,first),torch.nn.ReLU(),
+                torch.nn.Linear(first,second),torch.nn.ReLU(),torch.nn.Linear(second,2))
         else:raise ValueError("Unknown neural method")
 
     def node_input(self,numerical,categories):
@@ -40,3 +44,16 @@ class TabularNetwork(torch.nn.Module):
         if self.method=="FTTransformer":
             return self.core(numerical,categories),numerical.new_zeros(())
         return self.core(self.node_input(numerical,categories)),numerical.new_zeros(())
+
+
+def matched_mlp_architecture(parameter_budget,numeric_features=220):
+    inputs=numeric_features+12
+    candidates=[]
+    for first in range(8,513):
+        estimate=(parameter_budget-(inputs+1)*first-2)/(first+3)
+        for second in (int(estimate),int(estimate)+1):
+            if 8<=second<=512:
+                count=(inputs+1)*first+(first+3)*second+2
+                candidates.append((abs(count-parameter_budget),abs(first-second),first,second,count))
+    _,_,first,second,count=min(candidates)
+    return {"hidden":[first,second],"parameters":count}
