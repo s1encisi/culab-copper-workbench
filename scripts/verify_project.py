@@ -101,6 +101,15 @@ REQUIRED_PATHS = (
     "src/copper_mvp/routing_studies.py",
     "src/copper_mvp/api_routing.py",
     "scripts/run_routing_replay.py",
+    "src/copper_mvp/ensemble_models.py",
+    "src/copper_mvp/ensemble_time.py",
+    "src/copper_mvp/ensemble_fusion.py",
+    "src/copper_mvp/ensemble_training.py",
+    "src/copper_mvp/ensemble_evaluation.py",
+    "src/copper_mvp/ensemble_experiment.py",
+    "src/copper_mvp/ensemble_studies.py",
+    "src/copper_mvp/api_ensembles.py",
+    "scripts/run_ensemble_study.py",
 )
 
 FORBIDDEN_DIR_NAMES = {

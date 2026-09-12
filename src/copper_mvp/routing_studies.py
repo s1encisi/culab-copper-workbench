@@ -20,9 +20,19 @@ class RoutingRequest(BaseModel):
 
 
 class RoutingStudies:
+    directory_name="prediction_studies"
+    signature_files=("routing_metrics.py","prediction_router.py","routing_replay.py")
+
+    def policy_spec(self):
+        return RoutingPolicy().model_dump()
+
+    def perform_study(self,root,request,progress):
+        return run_replay(self.data,self.comparisons.directory(request.comparison_id),root,
+                          progress=progress,max_wall_seconds=request.max_wall_seconds)
+
     def __init__(self, root, data):
         self.root, self.data = Path(root), data
-        self.directory_root = self.root/"prediction_studies"
+        self.directory_root = self.root/self.directory_name
         self.directory_root.mkdir(parents=True,exist_ok=True)
         self.lock = threading.RLock()
         self.comparisons = ComparisonService(self.root/"model_comparisons",data)
@@ -40,8 +50,8 @@ class RoutingStudies:
         identifier=digest([actor.project_id,actor.user_id,request.request_key])[:32]
         root=self.directory(identifier)
         fingerprint=digest({"request":request.model_dump(),"source":source["fingerprint"],
-            "policy":RoutingPolicy().model_dump(),"code":{n:file_hash(Path(__file__).with_name(n))
-            for n in ("routing_metrics.py","prediction_router.py","routing_replay.py")}})
+            "policy":self.policy_spec(),"code":{n:file_hash(Path(__file__).with_name(n))
+            for n in self.signature_files}})
         with self.lock:
             if root.exists():
                 old=self.get(actor,identifier,result=False)
@@ -68,8 +78,7 @@ class RoutingStudies:
                 write_json(root/"state.json",state)
         update(status="running",started_at=utc_now())
         try:
-            result=run_replay(self.data,self.comparisons.directory(request.comparison_id),root,
-                progress=lambda value:update(progress=value),max_wall_seconds=request.max_wall_seconds)
+            result=self.perform_study(root,request,lambda value:update(progress=value))
             update(status="completed",finished_at=utc_now(),evaluation_sha256=file_hash(root/"evaluation.json"),
                    common_events=result["common_events"])
         except Exception as exc:
