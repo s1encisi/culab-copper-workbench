@@ -80,6 +80,8 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
         protocol["code_hashes"].update({name: file_hash(Path(__file__).with_name(name)) for name in ("statistical_registry.py", "statistical_models.py", "statistical_runtime.py")})
         protocol["latency_policy"]["event_context_methods"] = {"methods": [m for m in request.methods if method_spec(m, request.seed).get("input_kind") == "raw_event_sequence"],
             "samples_per_fold": 8, "scope": "loaded_parameters_with_causal_event_context_reconstruction", "mean_and_std_computed_together": True}
+    if any(m in ("CatBoost", "NGBoost", "EBM", "Cubist") for m in request.methods):
+        protocol["code_hashes"].update({name: file_hash(Path(__file__).with_name(name)) for name in ("specialized_registry.py", "specialized_models.py", "specialized_evaluation.py", "cubist_model.py")})
     write_json(output / "protocol.json", protocol)
     started = time.perf_counter()
     timings = []; artifacts = []; predictions = []; uncertainty_predictions = []
@@ -137,7 +139,13 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                             if model.spec.get("input_kind") == "raw_event_sequence":
                                 model.fit_context(data, train_ids, cutoff)
                             else:
+                                if method_id == "CatBoost":
+                                    ordered_times = [source_time(data.row(event).decision_at) for event in train_ids]
+                                    if any(a > b for a, b in zip(ordered_times, ordered_times[1:])):
+                                        raise WorkbenchError("CatBoost 训练行必须按时间排序", "MODEL_TRAINING_ORDER")
                                 model.fit(X_train, y_train)
+                                if method_id == "CatBoost":
+                                    model.fit_metadata["chronological_training_verified"] = True
                         finally:
                             timing["fit_ms"] = (time.perf_counter() - clock) * 1000
                         timing["warnings"] = model.fit_warnings
@@ -213,6 +221,11 @@ def load_registered_model(root: Path, manifest: dict, protocol: dict, method_id:
         or recorded["implementation"] != current["implementation"]
         or recorded["package_version"] != current["package_version"]):
         raise WorkbenchError("方法实现/预设与模型工件不一致", "COMPARISON_MODEL_VERSION")
+    if method_id in ("CatBoost", "NGBoost", "EBM", "Cubist"):
+        from copper_mvp.specialized_models import specialized_dependencies
+        specialized_dependencies()
+        if recorded["method_version"] != current["method_version"]:
+            raise WorkbenchError("专用模型实现版本不兼容", "COMPARISON_MODEL_VERSION")
     if recorded.get("input_kind") in ("raw_event_sequence", "current_result_pair"):
         from copper_mvp.statistical_runtime import statistical_dependencies
         statistical_dependencies()

@@ -30,6 +30,9 @@ def uncertainty_metrics(path,labels,common_events):
                 mean_width=float((upper-lower).mean()),
                 gaussian_nll=float((.5*np.log(2*np.pi)+np.log(std)+.5*((actual-point)/std)**2).mean()),
                 negative_lower_bounds=int((lower<0).sum()))
+            if method == "NGBoost":
+                from copper_mvp.specialized_evaluation import gaussian_scores
+                result.update(gaussian_scores(actual, point, std))
         elif part.kind.eq("raw_marginal_quantiles").all():
             values=part[["q10","q50","q90"]].to_numpy(float)
             if not np.isfinite(values).all():raise WorkbenchError("分位数输出含非法值","UNCERTAINTY_VALUES")

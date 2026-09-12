@@ -1,0 +1,1 @@
+cubist==1.2.2 --hash=sha256:53c84a0977a2ac50d12506e0dd0b2c6d1bbeecd7f3c334ce2053e4e744c95af3

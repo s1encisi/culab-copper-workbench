@@ -1,0 +1,12 @@
+# CatBoost, NGBoost and EBM optional runtime.
+catboost==1.2.8 --hash=sha256:8985dd217fe79161b05ed251c5f8a18130e2330d5c77559ac91b99b0cf781e6b
+ngboost==0.5.6 --hash=sha256:f6cb539b88e3d1a928605cf0d66665839911a1f8616b19eece6ba35669d9e692
+interpret-core==0.7.0 --hash=sha256:607c24cce643e54054fb00bf084b3c941f0e309bae8e1049038f3c4188a4d9d4
+graphviz==0.21 --hash=sha256:54f33de9f4f911d7e84e4191749cac8cc5653f815b06738c54db9a15ab8b1e42
+plotly==6.3.0 --hash=sha256:7ad806edce9d3cdd882eaebaf97c0c9e252043ed1ed3d382c3e3520ec07806d4
+narwhals==2.2.0 --hash=sha256:2b5e3d61a486fa4328c286b0c8018b3e781a964947ff725d66ba12f6d5ca3d2a
+tqdm==4.67.1 --hash=sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2
+lifelines==0.30.0 --hash=sha256:ac7c602c8aceced9770d3977817c9d99c250ed8cd86f2567fa0d23e4e8014bf9
+autograd-gamma==0.5.0 --hash=sha256:f27abb7b8bb9cffc8badcbf59f3fe44a9db39e124ecacf1992b6d952934ac9c4
+formulaic==1.2.1 --hash=sha256:661d6d2467aa961b9afb3a1e2a187494239793c63eb729e422d1307afa98b43b
+interface-meta==1.3.0 --hash=sha256:de35dc5241431886e709e20a14d6597ed07c9f1e8b4bfcffde2190ca5b700ee8

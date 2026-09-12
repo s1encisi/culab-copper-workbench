@@ -15,6 +15,7 @@ from copper_mvp.model_registry import ComparisonPredictionRequest, ComparisonReq
 from copper_mvp.model_training import load_registered_model, source_signature, train_comparison
 from copper_mvp.classical_registry import CLASSICAL_METHODS
 from copper_mvp.statistical_registry import STATISTICAL_METHODS
+from copper_mvp.specialized_registry import SPECIALIZED_METHODS
 
 
 def process_alive(pid):
@@ -69,6 +70,9 @@ class ComparisonService:
         if any(m in STATISTICAL_METHODS for m in request.methods):
             fingerprint_data["statistical_adapters"] = {name: file_hash(Path(__file__).with_name(name))
                 for name in ("statistical_registry.py", "statistical_models.py", "statistical_runtime.py")}
+        if any(m in SPECIALIZED_METHODS for m in request.methods):
+            fingerprint_data["specialized_adapters"] = {name: file_hash(Path(__file__).with_name(name))
+                for name in ("specialized_registry.py", "specialized_models.py", "specialized_evaluation.py", "cubist_model.py")}
         fingerprint = digest(fingerprint_data)
         with self.lock:
             if (root / "state.json").exists():

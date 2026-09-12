@@ -15,6 +15,7 @@ from copper_mvp.model_registry import FEATURE_COUNT, NUMERIC_COUNT, PRESETS, SEE
 from copper_mvp.modeling import make_model
 from copper_mvp.classical_registry import CLASSICAL_METHODS
 from copper_mvp.statistical_registry import STATISTICAL_METHODS, SEQUENCE_METHODS
+from copper_mvp.specialized_registry import SPECIALIZED_METHODS
 
 
 def preprocess():
@@ -69,6 +70,14 @@ class RegisteredModel:
             self.fit_metadata = self._statistical.fit_metadata
             self.is_fitted = True
             return self
+        if self.method_id in SPECIALIZED_METHODS:
+            from copper_mvp.specialized_models import SpecializedModel
+            self._specialized = SpecializedModel(self.method_id, self.seed).fit(X, y, weight)
+            self.models = self._specialized.models
+            self.fit_warnings = self._specialized.fit_warnings
+            self.fit_metadata = self._specialized.fit_metadata
+            self.is_fitted = True
+            return self
         if self.method_id in CLASSICAL_METHODS:
             from copper_mvp.classical_models import ClassicalModel
             self._classical = ClassicalModel(self.method_id, self.seed).fit(X, y, weight)
@@ -110,7 +119,9 @@ class RegisteredModel:
         X = validate_X(X)
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
-        if self.method_id in STATISTICAL_METHODS:
+        if self.method_id in SPECIALIZED_METHODS:
+            result = self._specialized.predict(X)
+        elif self.method_id in STATISTICAL_METHODS:
             result = self._statistical.predict(X)
         elif self.method_id in CLASSICAL_METHODS:
             result = self._classical.predict(X)
@@ -128,6 +139,8 @@ class RegisteredModel:
         X = validate_X(X)
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
+        if self.method_id in SPECIALIZED_METHODS:
+            return self._specialized.uncertainty(X)
         if self.method_id not in CLASSICAL_METHODS:
             raise WorkbenchError("该方法未开放概率输出", "MODEL_UNCERTAINTY_UNSUPPORTED")
         return self._classical.uncertainty(X)

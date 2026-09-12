@@ -122,6 +122,10 @@ class ArtifactSources:
         if "statsmodels" in family.get("dependencies",{}):
             from copper_mvp.statistical_runtime import statistical_dependencies
             dependencies.update(statistical_dependencies())
+        if method in ("CatBoost", "NGBoost", "EBM", "Cubist"):
+            from copper_mvp.specialized_models import specialized_dependencies
+            specialized_dependencies()
+            dependencies.update({name: metadata.version(name) for name in family["dependencies"]})
         descriptor=safe({"schema_version":"model-artifact-set.g5c.v1","source_kind":request.source_kind,"source_id":request.source_id,
             "method_id":method,"target":target,"unit":TARGET_UNITS[target],"seed":seed,"task_id":TASK_ID,
             "feature_columns":self.data.feature_columns,"feature_spec_hash":digest(self.data.feature_columns),
@@ -147,6 +151,9 @@ class ArtifactSources:
         for artifact in descriptor["artifacts"]:
             if file_hash(safe_artifact_path(root,artifact["path"]))!=artifact["sha256"]:
                 raise WorkbenchError("模型文件已变化","MODEL_HASH_MISMATCH")
+        if descriptor["method_id"] in ("CatBoost", "NGBoost", "EBM", "Cubist"):
+            from copper_mvp.specialized_models import specialized_dependencies
+            specialized_dependencies()
         for name,version in descriptor["dependencies"].items():
             if metadata.version(name)!=version:
                 raise WorkbenchError("模型依赖版本与登记记录不一致","MODEL_VERSION_MISMATCH")
