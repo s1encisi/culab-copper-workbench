@@ -14,6 +14,7 @@ from copper_mvp.common import WorkbenchError
 from copper_mvp.model_registry import FEATURE_COUNT, NUMERIC_COUNT, PRESETS, SEED, method_spec
 from copper_mvp.modeling import make_model
 from copper_mvp.classical_registry import CLASSICAL_METHODS
+from copper_mvp.statistical_registry import STATISTICAL_METHODS, SEQUENCE_METHODS
 
 
 def preprocess():
@@ -45,19 +46,29 @@ class RegisteredModel:
         self.n_features_in_ = FEATURE_COUNT
 
     def fit(self, X, y, sample_weight=None):
+        if self.method_id in SEQUENCE_METHODS:
+            raise WorkbenchError("序列方法需要完整事件上下文", "MODEL_CONTEXT_REQUIRED")
         X = validate_X(X)
         weight = None
         if sample_weight is not None:
             weight = np.asarray(sample_weight, dtype=float)
             if weight.shape != (len(X),) or not np.isfinite(weight).all() or (weight < 0).any() or weight.sum() <= 0:
                 raise WorkbenchError("训练权重必须有限、非负且总和为正", "MODEL_SAMPLE_WEIGHT")
-            if self.method_id in ("Persistence", "PLS"):
+            if self.method_id in ("Persistence", "PLS") or self.method_id in STATISTICAL_METHODS:
                 raise WorkbenchError("该方法不支持训练样本权重", "MODEL_SAMPLE_WEIGHT_UNSUPPORTED")
         if not self.spec["requires_fit"]:
             return self
         y = np.asarray(y, dtype=float)
         if y.shape != (len(X), 2) or not np.isfinite(y).all():
             raise WorkbenchError("训练目标必须是有限的 Cu/As 双列矩阵", "MODEL_TARGET_VALUES")
+        if self.method_id in STATISTICAL_METHODS:
+            from copper_mvp.statistical_models import StatisticalRegressor
+            self._statistical = StatisticalRegressor(self.method_id, self.seed).fit(X, y)
+            self.models = self._statistical.models
+            self.fit_warnings = self._statistical.fit_warnings
+            self.fit_metadata = self._statistical.fit_metadata
+            self.is_fitted = True
+            return self
         if self.method_id in CLASSICAL_METHODS:
             from copper_mvp.classical_models import ClassicalModel
             self._classical = ClassicalModel(self.method_id, self.seed).fit(X, y, weight)
@@ -94,10 +105,14 @@ class RegisteredModel:
         return self
 
     def predict(self, X):
+        if self.method_id in SEQUENCE_METHODS:
+            raise WorkbenchError("序列方法需要事件标识和原始记录顺序", "MODEL_CONTEXT_REQUIRED")
         X = validate_X(X)
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
-        if self.method_id in CLASSICAL_METHODS:
+        if self.method_id in STATISTICAL_METHODS:
+            result = self._statistical.predict(X)
+        elif self.method_id in CLASSICAL_METHODS:
             result = self._classical.predict(X)
         elif self.method_id == "Persistence":
             result = X[:, :2].copy()
@@ -116,3 +131,28 @@ class RegisteredModel:
         if self.method_id not in CLASSICAL_METHODS:
             raise WorkbenchError("该方法未开放概率输出", "MODEL_UNCERTAINTY_UNSUPPORTED")
         return self._classical.uncertainty(X)
+
+    def fit_context(self, data, train_ids, cutoff):
+        if self.method_id not in SEQUENCE_METHODS:
+            raise WorkbenchError("该方法使用矩阵训练接口", "MODEL_CONTEXT_UNSUPPORTED")
+        from copper_mvp.statistical_models import EventSequenceModel
+        self._sequence = EventSequenceModel(self.method_id, self.seed).fit_context(data, train_ids, cutoff)
+        self.models = self._sequence.models
+        self.fit_warnings = self._sequence.fit_warnings
+        self.fit_metadata = self._sequence.fit_metadata
+        self.is_fitted = True
+        return self
+
+    def predict_context(self, data, event_ids):
+        if not self.is_fitted:
+            raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
+        if self.method_id in SEQUENCE_METHODS:
+            return self._sequence.forecast_context(data, event_ids)["mean"]
+        return self.predict(data.X.loc[event_ids].to_numpy(float))
+
+    def predict_uncertainty_context(self, data, event_ids):
+        if not self.is_fitted:
+            raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
+        if self.method_id in SEQUENCE_METHODS:
+            return self._sequence.forecast_context(data, event_ids)
+        return self.predict_uncertainty(data.X.loc[event_ids].to_numpy(float))

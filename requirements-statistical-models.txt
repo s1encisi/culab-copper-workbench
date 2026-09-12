@@ -1,0 +1,3 @@
+# Optional statistical adapters. Public PyPI wheels; no dependency upgrades.
+statsmodels==0.14.6 --hash=sha256:2738a00fca51196f5a7d44b06970ace6b8b30289839e4808d656f8a98e35faa7
+patsy==1.0.1 --hash=sha256:751fb38f9e97e62312e921a1954b81e1bb2bcda4f5eeabaf94db251ee791509c

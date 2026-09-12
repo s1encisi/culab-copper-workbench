@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "copper-electrolysis-electrowinning-mas"
-version = "0.12.0"
+version = "0.13.0"
 description = "铜电解—电积历史数据多智能体正式研究工程"
 readme = "README.md"
 requires-python = ">=3.11,<3.12"
@@ -25,6 +25,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8,<9"]
+statistics = ["statsmodels==0.14.6", "patsy==1.0.1"]
 mvp = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "pymoo>=0.6.1,<0.7"]
 
 [tool.setuptools]

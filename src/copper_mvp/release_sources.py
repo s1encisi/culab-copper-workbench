@@ -118,11 +118,15 @@ class ArtifactSources:
         expected_folds=set(self.data.fold_for.values())
         if {a["fold_id"] for a in artifacts}!=expected_folds:
             raise WorkbenchError("缺少原时间折的模型工件","ARTIFACT_SOURCE")
+        dependencies={name:metadata.version(name) for name in ("numpy","scikit-learn","joblib")}
+        if "statsmodels" in family.get("dependencies",{}):
+            from copper_mvp.statistical_runtime import statistical_dependencies
+            dependencies.update(statistical_dependencies())
         descriptor=safe({"schema_version":"model-artifact-set.g5c.v1","source_kind":request.source_kind,"source_id":request.source_id,
             "method_id":method,"target":target,"unit":TARGET_UNITS[target],"seed":seed,"task_id":TASK_ID,
             "feature_columns":self.data.feature_columns,"feature_spec_hash":digest(self.data.feature_columns),
             "source":source,"bindings":bindings,"artifacts":artifacts,"benchmark":quality,
-            "family":family,"dependencies":{name:metadata.version(name) for name in ("numpy","scikit-learn","joblib")},
+            "family":family,"dependencies":dependencies,
             "license":{"project":"Not declared in the project metadata; no new license is assigned here",
                 "dependencies":{name:(metadata.metadata(name).get("License-Expression") or metadata.metadata(name).get("License") or "See installed distribution metadata")[:160]
                     for name in ("numpy","scikit-learn","joblib")}},
@@ -186,7 +190,7 @@ class ArtifactSources:
                 self.cache[key]=load_registered_model(root,manifest,protocol,descriptor["method_id"],fold)[0]
             else:
                 self.cache[key]=joblib.load(path)
-        values=self.cache[key].predict(self.data.X.loc[[event]].to_numpy(float))
+        values=self.cache[key].predict_context(self.data,[event]) if descriptor["source_kind"]=="model_comparison" else self.cache[key].predict(self.data.X.loc[[event]].to_numpy(float))
         return float(values[0,("cu","as").index(descriptor["target"])]),{"artifact_sha256":key,"execution":"model_inference"}
 
     def dynamic_replay(self,descriptor,entry):

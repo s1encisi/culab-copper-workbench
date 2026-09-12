@@ -76,6 +76,10 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
     }
     if any(m not in ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS") for m in request.methods):
         protocol["code_hashes"].update({name: file_hash(Path(__file__).with_name(name)) for name in ("classical_registry.py", "classical_models.py", "classical_evaluation.py")})
+    if any(method_spec(m, request.seed).get("input_kind") in ("raw_event_sequence", "current_result_pair") for m in request.methods):
+        protocol["code_hashes"].update({name: file_hash(Path(__file__).with_name(name)) for name in ("statistical_registry.py", "statistical_models.py", "statistical_runtime.py")})
+        protocol["latency_policy"]["event_context_methods"] = {"methods": [m for m in request.methods if method_spec(m, request.seed).get("input_kind") == "raw_event_sequence"],
+            "samples_per_fold": 8, "scope": "loaded_parameters_with_causal_event_context_reconstruction", "mean_and_std_computed_together": True}
     write_json(output / "protocol.json", protocol)
     started = time.perf_counter()
     timings = []; artifacts = []; predictions = []; uncertainty_predictions = []
@@ -130,10 +134,15 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                     if model.spec["requires_fit"]:
                         clock = time.perf_counter()
                         try:
-                            model.fit(X_train, y_train)
+                            if model.spec.get("input_kind") == "raw_event_sequence":
+                                model.fit_context(data, train_ids, cutoff)
+                            else:
+                                model.fit(X_train, y_train)
                         finally:
                             timing["fit_ms"] = (time.perf_counter() - clock) * 1000
                         timing["warnings"] = model.fit_warnings
+                        if hasattr(model, "fit_metadata"):
+                            entry["fit_metadata"] = model.fit_metadata
                     folder = output / "artifacts" / fold / method_id
                     folder.mkdir(parents=True, exist_ok=True)
                     if model.spec["requires_fit"]:
@@ -147,11 +156,11 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                     entry.update({"path": path.relative_to(output).as_posix(), "sha256": file_hash(path), "status": "completed"})
                     if valid_ids:
                         clock = time.perf_counter()
-                        values = model.predict(X_valid)
+                        values = model.predict_context(data, valid_ids)
                         timing["batch_predict_ms"] = (time.perf_counter() - clock) * 1000
                         if model.spec.get("capabilities", {}).get("uncertainty") in ("marginal_std", "raw_quantiles"):
                             clock = time.perf_counter()
-                            distribution = model.predict_uncertainty(X_valid)
+                            distribution = model.predict_uncertainty_context(data, valid_ids)
                             timing["uncertainty_predict_ms"] = (time.perf_counter() - clock) * 1000
                             for i, event in enumerate(valid_ids):
                                 for t, target in enumerate(("cu", "as")):
@@ -163,10 +172,12 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                                         row.update({"q10": float(distribution["values"][i, 0, t]), "q50": float(distribution["values"][i, 1, t]),
                                                     "q90": float(distribution["values"][i, 2, t])})
                                     uncertainty_predictions.append(row)
-                        positions = np.unique(np.linspace(0, len(valid_ids) - 1, min(32, len(valid_ids))).astype(int))
+                        contextual = model.spec.get("input_kind") == "raw_event_sequence"
+                        timing["prediction_scope"] = "event_context_reconstruction" if contextual else "single_row_matrix_inference"
+                        positions = np.unique(np.linspace(0, len(valid_ids) - 1, min(8 if contextual else 32, len(valid_ids))).astype(int))
                         for position in positions:
                             clock = time.perf_counter()
-                            model.predict(X_valid[position:position + 1])
+                            model.predict_context(data, [valid_ids[position]])
                             timing["single_prediction_ms"].append((time.perf_counter() - clock) * 1000)
                         for event, value in zip(valid_ids, values):
                             predictions.append({"event_id": event, "fold_id": fold, "method_id": method_id,
@@ -202,6 +213,11 @@ def load_registered_model(root: Path, manifest: dict, protocol: dict, method_id:
         or recorded["implementation"] != current["implementation"]
         or recorded["package_version"] != current["package_version"]):
         raise WorkbenchError("方法实现/预设与模型工件不一致", "COMPARISON_MODEL_VERSION")
+    if recorded.get("input_kind") in ("raw_event_sequence", "current_result_pair"):
+        from copper_mvp.statistical_runtime import statistical_dependencies
+        statistical_dependencies()
+        if recorded["method_version"] != current["method_version"]:
+            raise WorkbenchError("统计模型状态实现版本不兼容，请使用重新验证的工件", "COMPARISON_MODEL_VERSION")
     path = safe_artifact_path(root, entry["path"])
     if not path.is_file() or file_hash(path) != entry["sha256"]:
         raise WorkbenchError("比较模型工件哈希不匹配", "MODEL_HASH_MISMATCH")

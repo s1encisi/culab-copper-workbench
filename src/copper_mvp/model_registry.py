@@ -7,10 +7,11 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from copper_mvp.common import WorkbenchError, digest
 from copper_mvp.classical_registry import CLASSICAL_METHODS, classical_spec
+from copper_mvp.statistical_registry import STATISTICAL_METHODS, statistical_spec
 
 REGISTRY_VERSION = "model-registry.g2a.v1"
 LEGACY_METHOD_IDS = ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS")
-METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS
+METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS + STATISTICAL_METHODS
 FEATURE_COUNT = 114
 NUMERIC_COUNT = 110
 SEED = 20260905
@@ -34,6 +35,8 @@ IMPLEMENTATIONS = {
 
 
 def method_spec(method_id: str, seed: int = SEED) -> dict:
+    if method_id in STATISTICAL_METHODS:
+        return statistical_spec(method_id, seed)
     if method_id in CLASSICAL_METHODS:
         return classical_spec(method_id, seed)
     if method_id not in METHOD_IDS:
@@ -58,8 +61,8 @@ def method_spec(method_id: str, seed: int = SEED) -> dict:
 
 
 def catalog() -> dict:
-    return {"schema_version": "model-registry.g6a.v1", "items": [method_spec(m) for m in METHOD_IDS],
-            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS), "automatic_promotion": False,
+    return {"schema_version": "model-registry.g6b.v1", "items": [method_spec(m) for m in METHOD_IDS],
+            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS) + len(STATISTICAL_METHODS), "automatic_promotion": False,
             "default_comparison_methods": list(LEGACY_METHOD_IDS)}
 
 

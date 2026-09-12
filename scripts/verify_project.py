@@ -126,6 +126,11 @@ REQUIRED_PATHS = (
     "src/copper_mvp/classical_study.py",
     "src/copper_mvp/api_classical.py",
     "scripts/run_classical_study.py",
+    "src/copper_mvp/statistical_runtime.py",
+    "src/copper_mvp/statistical_registry.py",
+    "src/copper_mvp/statistical_models.py",
+    "requirements-statistical-models.txt",
+    "scripts/setup_statistical_models.ps1",
 )
 
 FORBIDDEN_DIR_NAMES = {

@@ -121,7 +121,7 @@ def evaluate_comparison(data, root: Path):
                           "cv_batch_prediction_ms": sum(r["batch_predict_ms"] for r in cv),
                           "single_predict_p50_ms": float(np.percentile(latencies, 50)) if latencies else None,
                           "single_predict_p95_ms": float(np.percentile(latencies, 95)) if latencies else None,
-                          "timing_samples": len(latencies), "failed_fits_or_predictions": sum(r["status"] == "failed" for r in rows),
+                          "timing_samples": len(latencies), "prediction_scope": sorted({r.get("prediction_scope", "single_row_matrix_inference") for r in cv}), "failed_fits_or_predictions": sum(r["status"] == "failed" for r in rows),
                           "fit_warning_count": sum(len(r["warnings"]) for r in rows),
                           "retries": sum(r["retries"] for r in rows), "cache_hits": 0,
                           "llm_calls": 0, "tokens": 0, "api_cost_cny": 0.0})
@@ -164,7 +164,7 @@ def evaluate_comparison(data, root: Path):
         p50 = f"{row['single_predict_p50_ms']:.4f}" if row["single_predict_p50_ms"] is not None else "缺失"
         p95 = f"{row['single_predict_p95_ms']:.4f}" if row["single_predict_p95_ms"] is not None else "缺失"
         report += f"| {row['method_id']} | {row['cv_fit_ms']:.2f} | {p50} | {p95} | {row['timing_samples']} | {row['fit_warning_count']} | {row['failed_fits_or_predictions']} |\n"
-    report += "\n推理计时为已载入模型的单事件、双目标热推理，不含排队、磁盘加载或 HTTP 开销；不同测量范围不能直接混比。\n\n"
+    report += "\n推理计时不含排队、磁盘加载或 HTTP 开销；事件序列方法还重建截至该事件的因果历史。JSON 中分别记录矩阵推理与上下文重建范围，不能直接混比。\n\n"
     report += "[完整评价](evaluation.json) · [指标 CSV](metrics.csv) · [各折指标](fold_metrics.csv) · [预先固定协议](protocol.json) · [训练和工件清单](training_manifest.json)\n\n"
     report += "预测排名和优化响应代理资格分开登记。本次比较不改变旧版默认模型、不自动批准新代理，也不使用 2026 外评。方法和参数均在查看本轮指标前固定。\n"
     (root / "report.md").write_text(report, encoding="utf-8")

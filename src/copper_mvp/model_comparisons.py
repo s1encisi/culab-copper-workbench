@@ -14,6 +14,7 @@ from copper_mvp.model_evaluation import evaluate_comparison, read_training
 from copper_mvp.model_registry import ComparisonPredictionRequest, ComparisonRequest, method_spec
 from copper_mvp.model_training import load_registered_model, source_signature, train_comparison
 from copper_mvp.classical_registry import CLASSICAL_METHODS
+from copper_mvp.statistical_registry import STATISTICAL_METHODS
 
 
 def process_alive(pid):
@@ -65,6 +66,9 @@ class ComparisonService:
         if any(m in CLASSICAL_METHODS for m in request.methods):
             fingerprint_data["classical_adapters"] = {name: file_hash(Path(__file__).with_name(name))
                 for name in ("classical_registry.py", "classical_models.py", "classical_evaluation.py")}
+        if any(m in STATISTICAL_METHODS for m in request.methods):
+            fingerprint_data["statistical_adapters"] = {name: file_hash(Path(__file__).with_name(name))
+                for name in ("statistical_registry.py", "statistical_models.py", "statistical_runtime.py")}
         fingerprint = digest(fingerprint_data)
         with self.lock:
             if (root / "state.json").exists():
@@ -140,7 +144,7 @@ class ComparisonService:
         model, artifact = load_registered_model(root, manifest, protocol, request.method_id, fold)
         if request.scope == "oof_replay" and source_time(artifact["fit_cutoff_at"]) > decision:
             raise WorkbenchError("模型训练截止晚于事件", "FUTURE_MODEL")
-        values = model.predict(self.data.X.loc[[request.event_id]].to_numpy(float))[0]
+        values = model.predict_context(self.data, [request.event_id])[0]
         result = {"schema_version": "comparison-prediction.g2a.v1", "run_id": run_id,
                 "event_id": request.event_id, "method_id": request.method_id, "scope": request.scope,
                 "evaluation_mode": "historical_replay" if request.scope == "oof_replay" else "development_analysis",
@@ -153,6 +157,6 @@ class ComparisonService:
                 "automatic_promotion": False, "optimization_proxy_approval": False}
 
         if request.include_uncertainty:
-            distribution = model.predict_uncertainty(self.data.X.loc[[request.event_id]].to_numpy(float))
+            distribution = model.predict_uncertainty_context(self.data, [request.event_id])
             result["uncertainty"] = safe({key: value.tolist() if isinstance(value, np.ndarray) else value for key, value in distribution.items()})
         return result

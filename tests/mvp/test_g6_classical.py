@@ -23,10 +23,10 @@ def data(n=96):
 
 
 def test_registry_counts_mechanisms_and_preserves_default_scope():
-    assert len(CLASSICAL_METHODS)==14 and len(METHOD_IDS)==20
-    assert catalog()["new_method_count"]==17
+    assert len(CLASSICAL_METHODS)==14 and len(METHOD_IDS)>=20
+    assert catalog()["new_method_count"]==len(METHOD_IDS)-3
     assert ComparisonRequest(request_key="default").methods==LEGACY_METHOD_IDS
-    assert len({item["implementation"] for item in catalog()["items"]})==20
+    assert len({item["implementation"] for item in catalog()["items"]})==len(METHOD_IDS)
 
 
 @pytest.mark.parametrize("method",CLASSICAL_METHODS)
