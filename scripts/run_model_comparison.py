@@ -20,13 +20,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from copper_mvp.common import DEFAULT_RUNS_DIR, PROJECT_ROOT
 from copper_mvp.data import DataRepository
 from copper_mvp.model_comparisons import ComparisonService
-from copper_mvp.model_registry import ComparisonRequest, METHOD_IDS, SEED
+from copper_mvp.model_registry import ComparisonRequest, METHOD_IDS, LEGACY_METHOD_IDS, SEED
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request-key", default="g2a-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:8])
-    parser.add_argument("--methods", nargs="+", choices=METHOD_IDS, default=list(METHOD_IDS))
+    parser.add_argument("--methods", nargs="+", choices=METHOD_IDS, default=list(LEGACY_METHOD_IDS))
     parser.add_argument("--seed", type=int, default=SEED)
     parser.add_argument("--max-wall-seconds", type=int, default=900)
     parser.add_argument("--output-root", type=Path, default=DEFAULT_RUNS_DIR / "model_comparisons")

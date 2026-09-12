@@ -23,7 +23,7 @@ from copper_mvp.labels import LabelLedger
 from copper_mvp.model_adapters import RegisteredModel
 from copper_mvp.model_comparisons import ComparisonService
 from copper_mvp.model_evaluation import evaluate_comparison, paired_week_interval, read_training
-from copper_mvp.model_registry import ComparisonPredictionRequest, ComparisonRequest, METHOD_IDS, catalog
+from copper_mvp.model_registry import ComparisonPredictionRequest, ComparisonRequest, LEGACY_METHOD_IDS as METHOD_IDS, METHOD_IDS as ALL_METHOD_IDS, catalog
 from copper_mvp.model_training import load_registered_model, train_comparison
 from copper_mvp.modeling import make_model
 
@@ -114,8 +114,8 @@ def experiment(tmp_path_factory):
 
 def test_registry_and_request_contracts():
     items = catalog()["items"]
-    assert [m["method_id"] for m in items] == list(METHOD_IDS)
-    assert sum(m["requires_fit"] for m in items) == 5
+    assert [m["method_id"] for m in items] == list(ALL_METHOD_IDS)
+    assert sum(m["requires_fit"] for m in items) == len(ALL_METHOD_IDS) - 1
     assert all(not m["automatic_promotion"] and not m["causal_control"] for m in items)
     for payload in ({"methods": ("ElasticNet",)}, {"methods": ("Persistence", "Persistence")},
                     {"methods": ("Persistence", "unknown")}, {"target_cu_g_l": 1}):
@@ -248,7 +248,7 @@ def test_week_block_interval_is_paired_and_handles_small_support():
 def test_api_idempotency_future_field_rejection_and_legacy_separation(experiment, tmp_path):
     data, _, _, _ = experiment
     with TestClient(create_app(tmp_path, data, enforce_auth=False)) as client:
-        assert len(client.get("/api/v2/models").json()["items"]) == 6
+        assert len(client.get("/api/v2/models").json()["items"]) == len(ALL_METHOD_IDS)
         request = {"request_key": "api-g2", "methods": ["Persistence", "ElasticNet"]}
         created = client.post("/api/v2/model-comparisons", json=request)
         assert created.status_code == 202

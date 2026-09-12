@@ -13,6 +13,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from copper_mvp.common import WorkbenchError
 from copper_mvp.model_registry import FEATURE_COUNT, NUMERIC_COUNT, PRESETS, SEED, method_spec
 from copper_mvp.modeling import make_model
+from copper_mvp.classical_registry import CLASSICAL_METHODS
 
 
 def preprocess():
@@ -43,13 +44,27 @@ class RegisteredModel:
         self.is_fitted = method_id == "Persistence"
         self.n_features_in_ = FEATURE_COUNT
 
-    def fit(self, X, y):
+    def fit(self, X, y, sample_weight=None):
         X = validate_X(X)
+        weight = None
+        if sample_weight is not None:
+            weight = np.asarray(sample_weight, dtype=float)
+            if weight.shape != (len(X),) or not np.isfinite(weight).all() or (weight < 0).any() or weight.sum() <= 0:
+                raise WorkbenchError("训练权重必须有限、非负且总和为正", "MODEL_SAMPLE_WEIGHT")
+            if self.method_id in ("Persistence", "PLS"):
+                raise WorkbenchError("该方法不支持训练样本权重", "MODEL_SAMPLE_WEIGHT_UNSUPPORTED")
         if not self.spec["requires_fit"]:
             return self
         y = np.asarray(y, dtype=float)
         if y.shape != (len(X), 2) or not np.isfinite(y).all():
             raise WorkbenchError("训练目标必须是有限的 Cu/As 双列矩阵", "MODEL_TARGET_VALUES")
+        if self.method_id in CLASSICAL_METHODS:
+            from copper_mvp.classical_models import ClassicalModel
+            self._classical = ClassicalModel(self.method_id, self.seed).fit(X, y, weight)
+            self.models = self._classical.models
+            self.fit_warnings = self._classical.fit_warnings
+            self.is_fitted = True
+            return self
         delta = y - X[:, :2]
         self.models = []
         with warnings.catch_warnings(record=True) as captured:
@@ -71,7 +86,8 @@ class RegisteredModel:
                         model = TransformedTargetRegressor(
                             regressor=Pipeline([("preprocess", preprocess()), ("regressor", estimator)]),
                             transformer=StandardScaler())
-                    model.fit(X, delta[:, target])
+                    kwargs = {} if weight is None else {"sample_weight" if self.method_id == "DeltaHGB" else "regressor__sample_weight": weight}
+                    model.fit(X, delta[:, target], **kwargs)
                     self.models.append(model)
         self.fit_warnings = [{"category": w.category.__name__, "message": str(w.message)[:400]} for w in captured]
         self.is_fitted = True
@@ -81,7 +97,9 @@ class RegisteredModel:
         X = validate_X(X)
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
-        if self.method_id == "Persistence":
+        if self.method_id in CLASSICAL_METHODS:
+            result = self._classical.predict(X)
+        elif self.method_id == "Persistence":
             result = X[:, :2].copy()
         elif self.method_id == "PLS":
             result = X[:, :2] + np.asarray(self.models[0].predict(X)).reshape(len(X), 2)
@@ -90,3 +108,11 @@ class RegisteredModel:
         if result.shape != (len(X), 2) or not np.isfinite(result).all():
             raise WorkbenchError("模型输出不是有限的 Cu/As 双列结果", "MODEL_OUTPUT_VALUES")
         return result
+
+    def predict_uncertainty(self, X):
+        X = validate_X(X)
+        if not self.is_fitted:
+            raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
+        if self.method_id not in CLASSICAL_METHODS:
+            raise WorkbenchError("该方法未开放概率输出", "MODEL_UNCERTAINTY_UNSUPPORTED")
+        return self._classical.uncertainty(X)

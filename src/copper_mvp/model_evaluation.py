@@ -20,6 +20,8 @@ def read_training(root: Path):
     for name, key in (("protocol.json", "protocol_sha256"), ("oof_predictions.csv", "oof_sha256")):
         if not (root / name).is_file() or file_hash(root / name) != manifest[key]:
             raise WorkbenchError("比较输入工件校验失败: " + name, "COMPARISON_HASH_MISMATCH")
+    if manifest.get("uncertainty_sha256") and file_hash(root / "oof_uncertainty.csv") != manifest["uncertainty_sha256"]:
+        raise WorkbenchError("概率预测工件校验失败", "COMPARISON_HASH_MISMATCH")
     protocol = json.loads((root / "protocol.json").read_text(encoding="utf-8"))
     return manifest, protocol
 
@@ -140,6 +142,10 @@ def evaluate_comparison(data, root: Path):
                               for t in ("cu", "as")} if metrics else {},
         "note": "固定参数的开发期 OOF 比较；周块重采样区间依赖时间块假设，不是独立外评或因果证据。",
     })
+    if manifest.get("uncertainty_sha256"):
+        from copper_mvp.classical_evaluation import uncertainty_metrics
+        result["uncertainty_metrics"] = uncertainty_metrics(root / "oof_uncertainty.csv", visible, events)
+        result["uncertainty_sha256"] = manifest["uncertainty_sha256"]
     write_json(root / "evaluation.json", result)
     csv_rows = [{**{k: v for k, v in row.items() if k != "paired_mae_ci95"},
                  "paired_mae_ci95_low": row["paired_mae_ci95"]["low"],

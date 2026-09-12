@@ -74,9 +74,11 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
         "code_hashes": {name: file_hash(Path(__file__).with_name(name))
                         for name in ("model_adapters.py", "model_registry.py", "model_training.py")},
     }
+    if any(m not in ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS") for m in request.methods):
+        protocol["code_hashes"].update({name: file_hash(Path(__file__).with_name(name)) for name in ("classical_registry.py", "classical_models.py", "classical_evaluation.py")})
     write_json(output / "protocol.json", protocol)
     started = time.perf_counter()
-    timings = []; artifacts = []; predictions = []
+    timings = []; artifacts = []; predictions = []; uncertainty_predictions = []
     scopes = [(f["fold_id"], data.training_ids(f["fold_id"]),
                data.cv.loc[data.cv.fold_id.eq(f["fold_id"]) & data.cv.fold_role.eq("VALIDATION"), "origin_event_id"].tolist(),
                source_time(f["fit_cutoff_at"])) for f in folds]
@@ -88,10 +90,14 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
         temporary = output / "oof_predictions.csv.tmp"
         pd.DataFrame(predictions, columns=columns).to_csv(temporary, index=False)
         temporary.replace(output / "oof_predictions.csv")
+        uncertainty_hash = None
+        if uncertainty_predictions:
+            pd.DataFrame(uncertainty_predictions).to_csv(output / "oof_uncertainty.csv", index=False)
+            uncertainty_hash = file_hash(output / "oof_uncertainty.csv")
         current = safe({"schema_version": "comparison-training.g2a.v1", "status": status,
             "created_at": utc_now(), "evaluation_mode": "historical_replay", "source": source,
             "protocol_sha256": file_hash(output / "protocol.json"), "oof_sha256": file_hash(output / "oof_predictions.csv"),
-            "artifacts": artifacts, "timings": timings, "runtime": runtime,
+            "artifacts": artifacts, "timings": timings, "runtime": runtime, "uncertainty_sha256": uncertainty_hash,
             "elapsed_ms": (time.perf_counter() - started) * 1000, "automatic_promotion": False})
         write_json(output / "training_manifest.json", current)
         return current
@@ -143,6 +149,20 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                         clock = time.perf_counter()
                         values = model.predict(X_valid)
                         timing["batch_predict_ms"] = (time.perf_counter() - clock) * 1000
+                        if model.spec.get("capabilities", {}).get("uncertainty") in ("marginal_std", "raw_quantiles"):
+                            clock = time.perf_counter()
+                            distribution = model.predict_uncertainty(X_valid)
+                            timing["uncertainty_predict_ms"] = (time.perf_counter() - clock) * 1000
+                            for i, event in enumerate(valid_ids):
+                                for t, target in enumerate(("cu", "as")):
+                                    row = {"event_id": event, "fold_id": fold, "method_id": method_id, "target": target,
+                                           "kind": distribution["kind"], "prediction": float(values[i, t])}
+                                    if distribution["kind"] == "marginal_standard_deviation":
+                                        row["std"] = float(distribution["std"][i, t])
+                                    else:
+                                        row.update({"q10": float(distribution["values"][i, 0, t]), "q50": float(distribution["values"][i, 1, t]),
+                                                    "q90": float(distribution["values"][i, 2, t])})
+                                    uncertainty_predictions.append(row)
                         positions = np.unique(np.linspace(0, len(valid_ids) - 1, min(32, len(valid_ids))).astype(int))
                         for position in positions:
                             clock = time.perf_counter()

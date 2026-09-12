@@ -5,13 +5,15 @@ import json
 import os
 from pathlib import Path
 import threading
+import numpy as np
 
-from copper_mvp.common import WorkbenchError, digest, file_hash, utc_now, write_json
+from copper_mvp.common import WorkbenchError, digest, file_hash, utc_now, write_json, safe
 from copper_mvp.data_contracts import source_time
 from copper_mvp.data_service import DataService
 from copper_mvp.model_evaluation import evaluate_comparison, read_training
 from copper_mvp.model_registry import ComparisonPredictionRequest, ComparisonRequest, method_spec
 from copper_mvp.model_training import load_registered_model, source_signature, train_comparison
+from copper_mvp.classical_registry import CLASSICAL_METHODS
 
 
 def process_alive(pid):
@@ -57,9 +59,13 @@ class ComparisonService:
         run_id = digest(request.request_key)[:32]
         root = self.directory(run_id)
         source = source_signature(self.data)
-        fingerprint = digest({"request": request.model_dump(mode="json"), "source": source,
+        fingerprint_data = {"request": request.model_dump(mode="json"), "source": source,
             "methods": [method_spec(m, request.seed) for m in request.methods],
-            "adapters": file_hash(Path(__file__).with_name("model_adapters.py"))})
+            "adapters": file_hash(Path(__file__).with_name("model_adapters.py"))}
+        if any(m in CLASSICAL_METHODS for m in request.methods):
+            fingerprint_data["classical_adapters"] = {name: file_hash(Path(__file__).with_name(name))
+                for name in ("classical_registry.py", "classical_models.py", "classical_evaluation.py")}
+        fingerprint = digest(fingerprint_data)
         with self.lock:
             if (root / "state.json").exists():
                 state = self.get(run_id)
@@ -135,7 +141,7 @@ class ComparisonService:
         if request.scope == "oof_replay" and source_time(artifact["fit_cutoff_at"]) > decision:
             raise WorkbenchError("模型训练截止晚于事件", "FUTURE_MODEL")
         values = model.predict(self.data.X.loc[[request.event_id]].to_numpy(float))[0]
-        return {"schema_version": "comparison-prediction.g2a.v1", "run_id": run_id,
+        result = {"schema_version": "comparison-prediction.g2a.v1", "run_id": run_id,
                 "event_id": request.event_id, "method_id": request.method_id, "scope": request.scope,
                 "evaluation_mode": "historical_replay" if request.scope == "oof_replay" else "development_analysis",
                 "virtual_prediction_at": decision.isoformat() if request.scope == "oof_replay" else None,
@@ -145,3 +151,8 @@ class ComparisonService:
                 "predictions": {t: {"value": float(values[i]), "unit": unit} for i, (t, unit) in enumerate((("cu", "g/L"), ("as", "mg/L")))},
                 "warnings": ["NEGATIVE_MODEL_PREDICTION"] if any(values < 0) else [],
                 "automatic_promotion": False, "optimization_proxy_approval": False}
+
+        if request.include_uncertainty:
+            distribution = model.predict_uncertainty(self.data.X.loc[[request.event_id]].to_numpy(float))
+            result["uncertainty"] = safe({key: value.tolist() if isinstance(value, np.ndarray) else value for key, value in distribution.items()})
+        return result

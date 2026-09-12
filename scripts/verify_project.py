@@ -120,6 +120,12 @@ REQUIRED_PATHS = (
     "src/copper_mvp/portfolio_studies.py",
     "src/copper_mvp/api_portfolios.py",
     "scripts/run_portfolio_study.py",
+    "src/copper_mvp/classical_registry.py",
+    "src/copper_mvp/classical_models.py",
+    "src/copper_mvp/classical_evaluation.py",
+    "src/copper_mvp/classical_study.py",
+    "src/copper_mvp/api_classical.py",
+    "scripts/run_classical_study.py",
 )
 
 FORBIDDEN_DIR_NAMES = {

@@ -29,7 +29,7 @@ def provider(request):
         name, arguments = "project_status", {"purpose": "核对当前可用方法"}
     else:
         name = "finish_answer"
-        arguments = {"kind": "answer", "answer": "当前有六种注册预测方法和三种优化方法。",
+        arguments = {"kind": "answer", "answer": "已读取当前注册的预测方法与优化方法目录。",
                      "evidence_ids": [feedback[-1]["evidence_id"]]}
     return httpx.Response(200, json={"choices": [{"finish_reason": "tool_calls", "message": {
         "role": "assistant", "content": None, "reasoning_content": "synthetic-private-provider-context",

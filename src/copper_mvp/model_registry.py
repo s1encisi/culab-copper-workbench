@@ -6,9 +6,11 @@ import sklearn
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from copper_mvp.common import WorkbenchError, digest
+from copper_mvp.classical_registry import CLASSICAL_METHODS, classical_spec
 
 REGISTRY_VERSION = "model-registry.g2a.v1"
-METHOD_IDS = ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS")
+LEGACY_METHOD_IDS = ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS")
+METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS
 FEATURE_COUNT = 114
 NUMERIC_COUNT = 110
 SEED = 20260905
@@ -32,6 +34,8 @@ IMPLEMENTATIONS = {
 
 
 def method_spec(method_id: str, seed: int = SEED) -> dict:
+    if method_id in CLASSICAL_METHODS:
+        return classical_spec(method_id, seed)
     if method_id not in METHOD_IDS:
         raise WorkbenchError("没有该注册方法", "METHOD_NOT_FOUND")
     spec = {
@@ -54,14 +58,15 @@ def method_spec(method_id: str, seed: int = SEED) -> dict:
 
 
 def catalog() -> dict:
-    return {"schema_version": REGISTRY_VERSION, "items": [method_spec(m) for m in METHOD_IDS],
-            "registered_count": len(METHOD_IDS), "new_method_count": 3, "automatic_promotion": False}
+    return {"schema_version": "model-registry.g6a.v1", "items": [method_spec(m) for m in METHOD_IDS],
+            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS), "automatic_promotion": False,
+            "default_comparison_methods": list(LEGACY_METHOD_IDS)}
 
 
 class ComparisonRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     request_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
-    methods: tuple[str, ...] = METHOD_IDS
+    methods: tuple[str, ...] = LEGACY_METHOD_IDS
     seed: int = Field(default=SEED, ge=0, le=2**31 - 1)
     max_wall_seconds: int = Field(default=900, ge=30, le=1800)
 
@@ -76,5 +81,12 @@ class ComparisonRequest(BaseModel):
 class ComparisonPredictionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     event_id: str = Field(min_length=1, max_length=180)
-    method_id: Literal["Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS"]
+    method_id: str = Field(min_length=1, max_length=80)
     scope: Literal["oof_replay", "development_analysis"] = "oof_replay"
+    include_uncertainty: bool = False
+
+    @model_validator(mode="after")
+    def registered_method(self):
+        if self.method_id not in METHOD_IDS:
+            raise ValueError("请选择已注册方法")
+        return self
