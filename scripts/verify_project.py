@@ -115,6 +115,11 @@ REQUIRED_PATHS = (
     "src/copper_mvp/model_lifecycle.py",
     "src/copper_mvp/api_releases.py",
     "scripts/verify_model_lifecycle.py",
+    "src/copper_mvp/optimizer_portfolio.py",
+    "src/copper_mvp/portfolio_comparison.py",
+    "src/copper_mvp/portfolio_studies.py",
+    "src/copper_mvp/api_portfolios.py",
+    "scripts/run_portfolio_study.py",
 )
 
 FORBIDDEN_DIR_NAMES = {
