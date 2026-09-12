@@ -11,6 +11,7 @@ from copper_mvp.contracts import RunRequest
 from copper_mvp.optimization_problem import build_problem
 from copper_mvp.optimizer_comparison import compare_optimizers, run_optimizer
 from copper_mvp.optimizer_registry import OPTIMIZERS, OptimizerComparisonRequest
+from copper_mvp.bayesian_optimizers import ENTROPY_OPTIMIZERS
 
 
 def mathematical():
@@ -64,7 +65,7 @@ def test_infeasible_and_plateau_results_keep_their_meaning(tmp_path):
         prepared.reference_front = None
         definition = prepared.specification()
         prepared.specification = lambda d=definition, k=kind: {**d, "test_fixture": k, "constraints": {"kind": k}}
-        for optimizer in OPTIMIZERS:
+        for optimizer in (name for name in OPTIMIZERS if name not in ENTROPY_OPTIMIZERS):
             with warnings.catch_warnings():
                 warnings.simplefilter("error", RuntimeWarning)
                 run = run_optimizer(prepared, optimizer, 17, 128, 10, tmp_path / kind / optimizer)

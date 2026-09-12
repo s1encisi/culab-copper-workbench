@@ -25,6 +25,8 @@ from copper_mvp.optimization_problem import build_problem
 from copper_mvp.optimizer_methods import EXTENDED_OPTIMIZERS, make_extended_optimizer, optimizer_method_spec
 from copper_mvp.platypus_methods import PLATYPUS_OPTIMIZERS, PlatypusAdapter, platypus_method_spec
 from copper_mvp.scalarization import SCALAR_OPTIMIZERS, ScalarizationAdapter, scalarization_spec
+from copper_mvp.bayesian_optimizers import BAYESIAN_OPTIMIZERS, BayesianAdapter, bayesian_spec
+from copper_mvp.bayesian_problems import build_comparison_problem
 
 TOLERANCE = 1e-8
 
@@ -123,6 +125,8 @@ def make_optimizer(name, population, scale, n_var):
         return PlatypusAdapter(name, population, scale)
     if name in SCALAR_OPTIMIZERS:
         return ScalarizationAdapter(name, population, scale)
+    if name in BAYESIAN_OPTIMIZERS:
+        return BayesianAdapter(name, population, scale)
     raise WorkbenchError("没有该优化器", "OPTIMIZER_NOT_FOUND")
 
 
@@ -162,7 +166,7 @@ def _run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progre
     pilot_f, pilot_g, _ = evaluator.evaluate(pilot_x, "pilot")
     metric = metric_configuration(prepared, pilot_f)
     spec = {**prepared.specification(), "metric": metric, "evaluator_version": "vector-evaluator.g2b.v1",
-            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py", "optimizer_methods.py", "platypus_methods.py", "hype.py", "scalarization.py")},
+            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py", "optimizer_methods.py", "platypus_methods.py", "hype.py", "scalarization.py", "bayesian_optimizers.py", "bayesian_problems.py", "neural_runtime.py")},
             "reference_front_hash": digest(prepared.reference_front.tolist()) if prepared.reference_front is not None else None,
             "budget_mode": "total_equivalent_v2", "total_budget": budget, "cache_policy": "disabled_for_comparison"}
     signature = digest(spec)
@@ -175,15 +179,17 @@ def _run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progre
         initial_x = rng.uniform(prepared.lower, prepared.upper, size=(64 - len(pilot_x), dimensions))
         initial_f, initial_g, _ = evaluator.evaluate(initial_x, "initial")
         X = np.vstack((pilot_x, initial_x)); F = np.vstack((pilot_f, initial_f)); G = np.vstack((pilot_g, initial_g))
-        objective_scale = np.asarray(metric["scale"]) if optimizer_id in EXTENDED_OPTIMIZERS + PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS else None
+        objective_scale = np.asarray(metric["scale"]) if optimizer_id in EXTENDED_OPTIMIZERS + PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS + BAYESIAN_OPTIMIZERS else None
         search_f = F if objective_scale is None else F / objective_scale
         population = Population.new(X=X, F=search_f, G=G - TOLERANCE, H=np.empty((len(X), 0)))
         population.apply(lambda individual: individual.evaluated.update(("F", "G", "H")))
         algorithm = make_optimizer(optimizer_id, population, metric["scale"], dimensions)
         termination = ("n_gen", 1 + int(np.ceil((budget - reserve - evaluator.used) / 64))) if optimizer_id == "RVEA" else ("n_eval", budget)
         algorithm.setup(RegisteredProblem(evaluator, objective_scale), termination=termination, seed=seed, verbose=False)
-        if optimizer_id in PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS:
+        if optimizer_id in PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS + BAYESIAN_OPTIMIZERS:
             algorithm.deadline = started + seconds
+        if optimizer_id in BAYESIAN_OPTIMIZERS:
+            algorithm.artifact_dir = output
         algorithm.next()  # Supplied initial values are already evaluated and charged.
         stop = "total_budget"
         last_report = 0
@@ -203,7 +209,7 @@ def _run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progre
             if evaluator.used - last_report >= 64:
                 progress({"optimizer": optimizer_id, "seed": seed, "evaluations": evaluator.used, "budget": budget})
                 last_report = evaluator.used
-        if optimizer_id in PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS and algorithm.stop_reason is not None:
+        if optimizer_id in PLATYPUS_OPTIMIZERS + SCALAR_OPTIMIZERS + BAYESIAN_OPTIMIZERS and algorithm.stop_reason is not None:
             stop = algorithm.stop_reason
     X, F, G = evaluator.search_points()
     feasible = np.flatnonzero(np.all(G <= TOLERANCE, axis=1))
@@ -264,6 +270,9 @@ def _run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progre
     elif optimizer_id in SCALAR_OPTIMIZERS:
         result["optimizer_spec"] = scalarization_spec(optimizer_id)
         result["scalarization"] = algorithm.details() if dimensions else {"status": "fixed_reference", "jobs": []}
+    elif optimizer_id in BAYESIAN_OPTIMIZERS:
+        result["optimizer_spec"] = bayesian_spec(optimizer_id)
+        result["bayesian"] = algorithm.details() if dimensions else {"status": "fixed_reference", "iterations": []}
     evaluator.save(output)
     write_json(output / "result.json", result)
     return result
@@ -284,7 +293,7 @@ def compare_optimizers(data, models, request, output, progress=lambda detail: No
                 for optimizer in request.optimizers:
                     progress({"case": case, "optimizer": optimizer, "seed": seed, "phase": "running"})
                     folder = output / f"case_{case}" / str(seed) / optimizer
-                    prepared = build_problem(data, models, request.problem_request(event, seed))
+                    prepared = build_comparison_problem(data, models, request, event, seed)
                     result = run_optimizer(prepared, optimizer, seed, request.total_budget, request.seconds_per_run, folder, progress)
                     signatures.add(result["problem_signature"])
                     if seed in initial_hashes and initial_hashes[seed] != result["initial_population_hash"]:
@@ -301,11 +310,14 @@ def compare_optimizers(data, models, request, output, progress=lambda detail: No
     rows = [{k: r[k] for k in ("case", "event_id", "optimizer_id", "seed", "status", "hv", "igd_plus", "total_evaluations",
                              "feasible_rate", "decision_front_points", "objective_front_points", "verified_front_points", "elapsed_ms", "stop_reason", "algorithm_executed")} for r in results]
     for row, result in zip(rows, results):
+        row.update(problem_signature=result["problem_signature"], mode=request.mode,
+                   model_profile=request.model_profile if request.mode == "plant" else request.benchmark_problem)
         detail = result.get("scalarization")
         row["scalarization_converged"] = detail["converged_subproblems"] if detail and "converged_subproblems" in detail else None
         row["scalarization_subproblems"] = len(detail["jobs"]) if detail else None
     pd.DataFrame(rows).to_csv(output / "metrics.csv", index=False)
     report = "# 注册优化方法比较\n\n"
+    report += f"模式：{request.mode}；问题/代理：{request.benchmark_problem if request.mode == 'benchmark' else request.model_profile}；范围：{request.model_scope if request.mode == 'plant' else 'mathematical'}。\n\n"
     report += f"工况 {summary['cases']} 个，优化器 {len(request.optimizers)} 个，种子 {len(request.seeds)} 个。每次总求值上限 {request.total_budget}，包含参考、探测、初始种群、搜索和复算。\n\n"
     report += "| 工况 | 优化器 | 种子 | 候选状态 | 停止原因 | 子问题收敛 | HV | IGD+ | 求值 | 复核前沿点 | 耗时(ms) |\n|---|---|---:|---|---|---|---:|---:|---:|---:|---:|\n"
     for r in results:

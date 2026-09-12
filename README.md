@@ -128,3 +128,9 @@ scripts/run_optimizer_comparison.py 可通过 --optimizers 显式选择这些方
 版本 0.16.0 接入 HypE、Epsilon-Constraint、Augmented-Chebyshev、Weighted-Sum、NBI 和 NNC，目录共 22 个算法。HypE 采用双目标精确体积分配；五种标量化方法执行重复锚点与偏好子问题求解，联合计算 F/G 并计费复核返回点。
 
 scripts/run_optimizer_comparison.py 新增 --model-profile。NBI 的历史比较明确选择 DeltaRidge；原默认三算法和 DeltaHGB 配置保留。报告同时列出候选可行性、停止原因和内层收敛数，失败运行保留已计费求值账本。
+
+## G6f 贝叶斯优化方法
+
+版本 0.17.0 接入 ParEGO、NEHVI、MES 和 JES，采用项目内固定 CPU 张量运行时。每次拟合高斯过程，使用原生 BoTorch 采集函数选择候选，并保存模型工件、采集开销和实际求值账本。
+
+ParEGO/NEHVI 支持已接入的约束概率路径；MES/JES 首版通过 --benchmark-problem unconstrained_quadratic 显式运行无约束数学问题。后者不会接受工厂 As 约束请求。原默认三算法及默认有约束数学问题保持不变。

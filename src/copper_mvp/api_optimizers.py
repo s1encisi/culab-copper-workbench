@@ -49,11 +49,13 @@ def optimizer_router():
             for row in result["results"]:
                 if "scalarization" in row:
                     row["scalarization"] = {k: v for k, v in row["scalarization"].items() if k != "jobs"}
+                if "bayesian" in row:
+                    row["bayesian"] = {k: v for k, v in row["bayesian"].items() if k != "iterations"}
             record["result"] = result
         audit_path = path / "independent_audit.json"
         if audit_path.is_file():
             audit = json.loads(audit_path.read_text(encoding="utf-8"))
-            record["independent_audit"] = {k: v for k, v in audit.items() if k not in ("rows", "source_hashes", "scalarization_audits")}
+            record["independent_audit"] = {k: v for k, v in audit.items() if k not in ("rows", "source_hashes", "scalarization_audits", "bayesian_audits")}
         return record
 
     @router.get("/optimizer-comparisons/{run_id}/cases/{case}/{optimizer}/{seed}")

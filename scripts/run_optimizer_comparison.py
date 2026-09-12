@@ -28,6 +28,7 @@ def main():
     parser.add_argument("--cases", type=int, default=8)
     parser.add_argument("--budget", type=int, default=2048)
     parser.add_argument("--model-profile", choices=("DeltaHGB", "DeltaRidge"), default="DeltaHGB")
+    parser.add_argument("--benchmark-problem", choices=("constrained_quadratic", "unconstrained_quadratic"), default="constrained_quadratic")
     parser.add_argument("--seeds", nargs="+", type=int, default=[20260911, 20260912, 20260913])
     parser.add_argument("--optimizers", nargs="+", choices=OPTIMIZERS, default=list(LEGACY_OPTIMIZERS))
     parser.add_argument("--seconds", type=int, default=120)
@@ -46,7 +47,7 @@ def main():
         pool = data.events(scope="dual", limit=5000)["items"]
         events = [pool[i]["event_id"] for i in np.unique(np.linspace(0, len(pool)-1, min(args.cases, len(pool))).astype(int))]
     request = OptimizerComparisonRequest(request_key=args.request_key, mode=args.mode, event_ids=tuple(events),
-              optimizers=tuple(args.optimizers), seeds=tuple(args.seeds), total_budget=args.budget, seconds_per_run=args.seconds, model_profile=args.model_profile)
+              optimizers=tuple(args.optimizers), seeds=tuple(args.seeds), total_budget=args.budget, seconds_per_run=args.seconds, model_profile=args.model_profile, benchmark_problem=args.benchmark_problem)
     run_id = digest(request.request_key)[:32]
     output = root / run_id
     if output.exists():

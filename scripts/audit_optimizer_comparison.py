@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import warnings
+from collections import Counter
 from pathlib import Path
 import sys
 from time import perf_counter
@@ -14,9 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from copper_mvp.common import DEFAULT_RUNS_DIR, digest, file_hash, write_json
 from copper_mvp.data import DataRepository
 from copper_mvp.modeling import ModelManager
-from copper_mvp.optimization_problem import build_problem
+from copper_mvp.bayesian_problems import build_comparison_problem
 from copper_mvp.optimizer_registry import OptimizerComparisonRequest
 from copper_mvp.scalarization_audit import audit_scalarization
+from copper_mvp.bayesian_audit import audit_bayesian
 
 
 def hv2d(front, reference):
@@ -43,6 +46,7 @@ def audit_comparison(run_id):
     models = ModelManager(DEFAULT_RUNS_DIR, data) if data else None
     rows, extra_evaluations, hashes = [], 0, {}
     scalar_audits, scalar_evaluations = [], 0
+    bayesian_audits, bayesian_evaluations = [], 0
     prepared_cases = {}
     for record in comparison["results"]:
         case, seed, name = record["case"], record["seed"], record["optimizer_id"]
@@ -60,7 +64,7 @@ def audit_comparison(run_id):
             if int(frame.phase.eq(phase).sum()) != count:
                 raise ValueError("Phase count differs from ledger")
         if case not in prepared_cases:
-            prepared_cases[case] = build_problem(data, models, request.problem_request(record["event_id"], seed))
+            prepared_cases[case] = build_comparison_problem(data, models, request, record["event_id"], seed)
         prepared = prepared_cases[case]
         for key, value in prepared.specification().items():
             if problem.get(key) != value:
@@ -69,6 +73,14 @@ def audit_comparison(run_id):
             scalar_audit = audit_scalarization(saved, frame, prepared)
             scalar_evaluations += scalar_audit["extra_return_evaluations"]
             scalar_audits.append({"case": case, "seed": seed, "optimizer": name, **scalar_audit})
+        if "bayesian" in saved and saved["algorithm_executed"]:
+            with warnings.catch_warnings(record=True) as audit_notices:
+                warnings.simplefilter("always")
+                checked_bo = audit_bayesian(saved, frame, prepared, folder)
+            checked_bo["warning_counts"] = dict(Counter(type(w.message).__name__ for w in audit_notices))
+            checked_bo["warning_messages"] = sorted({str(w.message) for w in audit_notices})
+            bayesian_evaluations += checked_bo["extra_candidate_evaluations"]
+            bayesian_audits.append({"case": case, "seed": seed, "optimizer": name, **checked_bo})
         candidates = saved["candidates"]
         X = np.array([[c["variables"][v["name"]] for v in problem["variables"]] for c in candidates])
         F = np.array([[c["f1"], c["f2"]] for c in candidates]).reshape(-1, 2)
@@ -123,17 +135,18 @@ def audit_comparison(run_id):
                         "elapsed_ratio_median": float(np.median(ratios)),
                         "elapsed_ms_p50": float(np.quantile([r["elapsed_ms"] for r in group], 0.5)),
                         "elapsed_ms_p95": float(np.quantile([r["elapsed_ms"] for r in group], 0.95))}
-    result = {"schema_version": "optimizer-independent-audit.g6e.v1", "run_id": run_id, "status": "passed", "runs": len(rows),
+    result = {"schema_version": "optimizer-independent-audit.g6f.v1", "run_id": run_id, "status": "passed", "runs": len(rows),
               "request": request.model_dump(mode="json"), "paired_baseline": "NSGA-II", "paired": paired, "rows": rows,
               "bootstrap": {"unit": "case_block_all_seeds_retained", "resamples": 2000, "seed": 20260912},
               "total_solver_evaluations": sum(r["total_evaluations"] for r in rows),
               "extra_independent_front_evaluations": extra_evaluations, "extra_problem_reference_evaluations": len(prepared_cases),
               "extra_scalar_return_evaluations": scalar_evaluations, "scalarization_audits": scalar_audits,
+              "extra_bayesian_candidate_evaluations": bayesian_evaluations, "bayesian_audits": bayesian_audits,
               "audit_elapsed_ms": (perf_counter() - started) * 1000, "source_hashes": hashes,
               "auditor_sha256": file_hash(Path(__file__)),
-              "auditor_dependencies": {"scalarization_audit.py": file_hash(Path(__file__).resolve().parents[1]/"src/copper_mvp/scalarization_audit.py")}, "automatic_promotion": False}
+              "auditor_dependencies": {name: file_hash(Path(__file__).resolve().parents[1]/"src/copper_mvp"/name) for name in ("scalarization_audit.py", "bayesian_audit.py")}, "automatic_promotion": False}
     write_json(root / "independent_audit.json", result)
-    return {k: v for k, v in result.items() if k not in ("rows", "source_hashes", "scalarization_audits")}
+    return {k: v for k, v in result.items() if k not in ("rows", "source_hashes", "scalarization_audits", "bayesian_audits")}
 
 
 if __name__ == "__main__":
