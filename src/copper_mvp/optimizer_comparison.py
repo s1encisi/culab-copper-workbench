@@ -22,6 +22,7 @@ from threadpoolctl import threadpool_limits
 from copper_mvp.common import WorkbenchError, digest, file_hash, safe, utc_now, write_json
 from copper_mvp.optimization import nondominated
 from copper_mvp.optimization_problem import build_problem
+from copper_mvp.optimizer_methods import EXTENDED_OPTIMIZERS, make_extended_optimizer, optimizer_method_spec
 
 TOLERANCE = 1e-8
 
@@ -70,7 +71,8 @@ class EvaluationService:
 
 
 class RegisteredProblem(Problem):
-    def __init__(self, evaluator):
+    def __init__(self, evaluator, objective_scale=None):
+        self.objective_scale = objective_scale
         prepared = evaluator.prepared
         super().__init__(n_var=len(prepared.lower), n_obj=2, n_ieq_constr=prepared.constraints,
                          xl=prepared.lower, xu=prepared.upper)
@@ -78,7 +80,8 @@ class RegisteredProblem(Problem):
 
     def _evaluate(self, X, out, *args, **kwargs):
         F, G, _ = self.evaluator.evaluate(X, "search")
-        out["F"], out["G"] = F, G - TOLERANCE
+        out["F"] = F if self.objective_scale is None else F / self.objective_scale
+        out["G"] = G - TOLERANCE
 
 
 class ConstantSafeNormalization(HyperplaneNormalization):
@@ -112,6 +115,8 @@ def make_optimizer(name, population, scale, n_var):
         return SPEA2(**kwargs, survival=fresh_spea_survival())
     if name == "SMS-EMOA":
         return SMSEMOA(**kwargs, n_offsprings=1, normalize=False, survival=FixedReferenceSurvival(scale))
+    if name in EXTENDED_OPTIMIZERS:
+        return make_extended_optimizer(name, population, n_var)
     raise WorkbenchError("没有该优化器", "OPTIMIZER_NOT_FOUND")
 
 
@@ -138,7 +143,7 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
     pilot_f, pilot_g, _ = evaluator.evaluate(pilot_x, "pilot")
     metric = metric_configuration(prepared, pilot_f)
     spec = {**prepared.specification(), "metric": metric, "evaluator_version": "vector-evaluator.g2b.v1",
-            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py")},
+            "evaluator_hashes": {name: file_hash(Path(__file__).with_name(name)) for name in ("optimization_problem.py", "optimizer_comparison.py", "optimizer_methods.py")},
             "reference_front_hash": digest(prepared.reference_front.tolist()) if prepared.reference_front is not None else None,
             "budget_mode": "total_equivalent_v2", "total_budget": budget, "cache_policy": "disabled_for_comparison"}
     signature = digest(spec)
@@ -151,10 +156,13 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
         initial_x = rng.uniform(prepared.lower, prepared.upper, size=(64 - len(pilot_x), dimensions))
         initial_f, initial_g, _ = evaluator.evaluate(initial_x, "initial")
         X = np.vstack((pilot_x, initial_x)); F = np.vstack((pilot_f, initial_f)); G = np.vstack((pilot_g, initial_g))
-        population = Population.new(X=X, F=F, G=G - TOLERANCE, H=np.empty((len(X), 0)))
+        objective_scale = np.asarray(metric["scale"]) if optimizer_id in EXTENDED_OPTIMIZERS else None
+        search_f = F if objective_scale is None else F / objective_scale
+        population = Population.new(X=X, F=search_f, G=G - TOLERANCE, H=np.empty((len(X), 0)))
         population.apply(lambda individual: individual.evaluated.update(("F", "G", "H")))
         algorithm = make_optimizer(optimizer_id, population, metric["scale"], dimensions)
-        algorithm.setup(RegisteredProblem(evaluator), termination=("n_eval", budget), seed=seed, verbose=False)
+        termination = ("n_gen", 1 + int(np.ceil((budget - reserve - evaluator.used) / 64))) if optimizer_id == "RVEA" else ("n_eval", budget)
+        algorithm.setup(RegisteredProblem(evaluator, objective_scale), termination=termination, seed=seed, verbose=False)
         algorithm.next()  # Supplied initial values are already evaluated and charged.
         stop = "total_budget"
         last_report = 0
@@ -165,7 +173,7 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
             if perf_counter() - started >= seconds:
                 stop = "time_budget"
                 break
-            algorithm.n_offsprings = min(1 if optimizer_id == "SMS-EMOA" else 64, remaining)
+            algorithm.n_offsprings = min(1 if optimizer_id in ("SMS-EMOA", "MOEA-D") else 64, remaining)
             previous = evaluator.used
             algorithm.next()
             if evaluator.used == previous:
@@ -226,6 +234,8 @@ def run_optimizer(prepared, optimizer_id, seed, budget, seconds, output, progres
         "objective_front_points": objective_front_count, "verified_front_points": len(candidates),
         "first_feasible_ms": evaluator.first_feasible_ms, "timing_scope": "pilot_initialization_search_and_verification_excludes_problem_assembly", "elapsed_ms": (perf_counter() - started) * 1000,
         "candidates": candidates, "warnings": prepared.warnings, "execution_authorized": False})
+    if optimizer_id in EXTENDED_OPTIMIZERS:
+        result["optimizer_spec"] = optimizer_method_spec(optimizer_id)
     evaluator.save(output)
     write_json(output / "result.json", result)
     return result

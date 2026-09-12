@@ -110,3 +110,9 @@ scripts/run_routing_replay.py 提供本地执行入口；必需参数为 --compa
 版本 0.13.0 增加 LocalLinearKernel、PSplineGAM、SARIMAX、VAR、ETS。目录共 25 种方法，覆盖设计中的 22 个新增模型。序列方法保留完整事件索引，按时间更新状态，训练参数与预测时可得信息分开处理。
 
 可选统计依赖通过 scripts/setup_statistical_models.ps1 按固定版本与哈希安装到项目运行目录。统一比较、历史回放和概率查询接口支持这些方法，默认比较范围与既有模型行为保持兼容。
+
+## G6c 优化方法扩展
+
+版本 0.14.0 增加 NSGA-III、MOEA/D、RVEA、AGE-MOEA、C-TAEA、GDE3 和 Omni-Optimizer。目录共 10 种方法，覆盖设计中的 9 个新增优化方法；原三算法仍为默认比较范围。
+
+scripts/run_optimizer_comparison.py 可通过 --optimizers 显式选择这些方法，MOEA/D 的接口标识为 MOEA-D。新方法使用共享初始点、固定目标尺度和完整求值预算；MOEA/D 显式执行约束优先的邻域替换，GDE3 支持最后不足一代的预算。AGE-MOEA 可选依赖通过 scripts/setup_optimizer_methods.ps1 安装到本地运行目录。

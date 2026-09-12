@@ -47,6 +47,10 @@ def optimizer_router():
             result = json.loads((path / "comparison.json").read_text(encoding="utf-8"))
             result["results"] = [{k: v for k, v in row.items() if k != "candidates"} for row in result["results"]]
             record["result"] = result
+        audit_path = path / "independent_audit.json"
+        if audit_path.is_file():
+            audit = json.loads(audit_path.read_text(encoding="utf-8"))
+            record["independent_audit"] = {k: v for k, v in audit.items() if k not in ("rows", "source_hashes")}
         return record
 
     @router.get("/optimizer-comparisons/{run_id}/cases/{case}/{optimizer}/{seed}")

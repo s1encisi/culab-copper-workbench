@@ -131,6 +131,10 @@ REQUIRED_PATHS = (
     "src/copper_mvp/statistical_models.py",
     "requirements-statistical-models.txt",
     "scripts/setup_statistical_models.ps1",
+    "src/copper_mvp/optimizer_methods.py",
+    "scripts/audit_optimizer_comparison.py",
+    "requirements-optimizer-methods.txt",
+    "scripts/setup_optimizer_methods.ps1",
 )
 
 FORBIDDEN_DIR_NAMES = {

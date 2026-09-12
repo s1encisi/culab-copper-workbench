@@ -1,0 +1,3 @@
+# Optional AGE-MOEA runtime; CPython 3.11, Windows x64.
+numba==0.61.2 --hash=sha256:76bcec9f46259cedf888041b9886e257ae101c6268261b19fda8cfbc52bec9d1
+llvmlite==0.44.0 --hash=sha256:d8489634d43c20cd0ad71330dde1d5bc7b9966937a263ff1ec1cebb90dc50955

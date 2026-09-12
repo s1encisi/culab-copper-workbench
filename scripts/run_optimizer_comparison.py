@@ -18,7 +18,7 @@ from copper_mvp.common import DEFAULT_RUNS_DIR, PROJECT_ROOT, digest, utc_now, w
 from copper_mvp.data import DataRepository
 from copper_mvp.modeling import ModelManager
 from copper_mvp.optimizer_comparison import compare_optimizers
-from copper_mvp.optimizer_registry import OPTIMIZERS, OptimizerComparisonRequest
+from copper_mvp.optimizer_registry import LEGACY_OPTIMIZERS, OPTIMIZERS, OptimizerComparisonRequest
 
 
 def main():
@@ -28,7 +28,7 @@ def main():
     parser.add_argument("--cases", type=int, default=8)
     parser.add_argument("--budget", type=int, default=2048)
     parser.add_argument("--seeds", nargs="+", type=int, default=[20260911, 20260912, 20260913])
-    parser.add_argument("--optimizers", nargs="+", choices=OPTIMIZERS, default=list(OPTIMIZERS))
+    parser.add_argument("--optimizers", nargs="+", choices=OPTIMIZERS, default=list(LEGACY_OPTIMIZERS))
     parser.add_argument("--seconds", type=int, default=120)
     parser.add_argument("--request-key", default="g2b-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + uuid.uuid4().hex[:6])
     parser.add_argument("--output-root", type=Path, default=DEFAULT_RUNS_DIR / "optimizer_comparisons")

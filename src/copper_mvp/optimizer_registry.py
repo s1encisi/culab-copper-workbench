@@ -6,7 +6,10 @@ import pymoo
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from copper_mvp.contracts import RunRequest
 
-OPTIMIZERS = ("NSGA-II", "SPEA2", "SMS-EMOA")
+from copper_mvp.optimizer_methods import EXTENDED_OPTIMIZERS, optimizer_method_spec
+
+LEGACY_OPTIMIZERS = ("NSGA-II", "SPEA2", "SMS-EMOA")
+OPTIMIZERS = LEGACY_OPTIMIZERS + EXTENDED_OPTIMIZERS
 
 
 def optimizer_catalog():
@@ -15,11 +18,15 @@ def optimizer_catalog():
         ("SPEA2", "strength fitness, density and archive truncation", 64),
         ("SMS-EMOA", "fixed-reference hypervolume contribution survival", 1),
     )
-    return {"schema_version": "optimizer-registry.g2b.v1", "items": [
+    return {"schema_version": "optimizer-registry.g6c.v1", "new_optimizer_count": 9, "items": [
         {"optimizer_id": name, "mechanism": mechanism, "package": "pymoo", "package_version": pymoo.__version__,
          "population": 64, "offspring_batch": offspring, "variables": "continuous", "objectives": 2,
          "inequality_constraints": True, "status": "registered", "execution_authorized": False}
-        for name, mechanism, offspring in descriptions]}
+        for name, mechanism, offspring in descriptions] + [
+        {**optimizer_method_spec(name), "population": 64, "offspring_batch": 1 if name == "MOEA-D" else 64,
+         "variables": "continuous", "objectives": 2, "inequality_constraints": True,
+         "package": "pymoo", "package_version": pymoo.__version__, "status": "registered", "execution_authorized": False}
+        for name in EXTENDED_OPTIMIZERS]}
 
 
 class OptimizerComparisonRequest(BaseModel):
@@ -27,7 +34,7 @@ class OptimizerComparisonRequest(BaseModel):
     request_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
     mode: Literal["plant", "benchmark"] = "plant"
     event_ids: tuple[str, ...] = ()
-    optimizers: tuple[str, ...] = OPTIMIZERS
+    optimizers: tuple[str, ...] = LEGACY_OPTIMIZERS
     seeds: tuple[int, ...] = (20260911, 20260912, 20260913)
     model_profile: Literal["DeltaHGB", "DeltaRidge"] = "DeltaHGB"
     model_scope: Literal["oof_replay", "development_analysis"] = "oof_replay"
