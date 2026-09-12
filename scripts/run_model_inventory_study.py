@@ -24,6 +24,7 @@ if __name__ == "__main__":
                         default=["CatBoost", "NGBoost", "EBM", "Cubist"])
     parser.add_argument("--seeds", type=int, nargs="+", default=list(range(20260911, 20260916)))
     parser.add_argument("--run-dir", type=Path, default=Path("runs/mvp"))
+    parser.add_argument("--max-wall-seconds", type=int, default=1800)
     args = parser.parse_args()
     if not 1 <= len(args.seeds) <= 5 or len(set(args.seeds)) != len(args.seeds):
         parser.error("use one to five distinct seeds")
@@ -35,7 +36,8 @@ if __name__ == "__main__":
     print(json.dumps({"study_id": digest(args.request_key)[:32], "seeds": args.seeds}), flush=True)
     folder, result = run_inventory_study(DataRepository(), root, args.reference_comparison_id,
         args.request_key, args.methods, args.seeds,
-        progress=lambda value: print(json.dumps(value, ensure_ascii=False), flush=True))
+        progress=lambda value: print(json.dumps(value, ensure_ascii=False), flush=True),
+        max_wall_seconds=args.max_wall_seconds)
     print(json.dumps({"status": result["status"], "common_events": result["common_events"],
                       "output": str(folder)}, ensure_ascii=False), flush=True)
     raise SystemExit(0 if result["status"] == "completed" else 1)

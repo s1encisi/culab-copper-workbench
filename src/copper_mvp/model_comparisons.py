@@ -73,6 +73,9 @@ class ComparisonService:
         if any(m in SPECIALIZED_METHODS for m in request.methods):
             fingerprint_data["specialized_adapters"] = {name: file_hash(Path(__file__).with_name(name))
                 for name in ("specialized_registry.py", "specialized_models.py", "specialized_evaluation.py", "cubist_model.py")}
+        if "BART" in request.methods:
+            from copper_mvp.bart_registry import bart_source_hashes
+            fingerprint_data["bart_adapters"] = bart_source_hashes()
         fingerprint = digest(fingerprint_data)
         with self.lock:
             if (root / "state.json").exists():

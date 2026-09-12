@@ -82,6 +82,9 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
             "samples_per_fold": 8, "scope": "loaded_parameters_with_causal_event_context_reconstruction", "mean_and_std_computed_together": True}
     if any(m in ("CatBoost", "NGBoost", "EBM", "Cubist") for m in request.methods):
         protocol["code_hashes"].update({name: file_hash(Path(__file__).with_name(name)) for name in ("specialized_registry.py", "specialized_models.py", "specialized_evaluation.py", "cubist_model.py")})
+    if "BART" in request.methods:
+        from copper_mvp.bart_registry import bart_source_hashes
+        protocol["code_hashes"].update(bart_source_hashes())
     write_json(output / "protocol.json", protocol)
     started = time.perf_counter()
     timings = []; artifacts = []; predictions = []; uncertainty_predictions = []
@@ -143,7 +146,10 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                                     ordered_times = [source_time(data.row(event).decision_at) for event in train_ids]
                                     if any(a > b for a, b in zip(ordered_times, ordered_times[1:])):
                                         raise WorkbenchError("CatBoost 训练行必须按时间排序", "MODEL_TRAINING_ORDER")
-                                model.fit(X_train, y_train)
+                                if method_id == "BART":
+                                    model.fit(X_train, y_train, max_wall_seconds=request.max_wall_seconds-(time.perf_counter()-started))
+                                else:
+                                    model.fit(X_train, y_train)
                                 if method_id == "CatBoost":
                                     model.fit_metadata["chronological_training_verified"] = True
                         finally:
@@ -231,6 +237,11 @@ def load_registered_model(root: Path, manifest: dict, protocol: dict, method_id:
         statistical_dependencies()
         if recorded["method_version"] != current["method_version"]:
             raise WorkbenchError("统计模型状态实现版本不兼容，请使用重新验证的工件", "COMPARISON_MODEL_VERSION")
+    if method_id == "BART":
+        from copper_mvp.bart_trees import numeric_evaluator
+        numeric_evaluator()
+        if recorded["method_version"] != current["method_version"]:
+            raise WorkbenchError("BART 模型实现版本不兼容", "COMPARISON_MODEL_VERSION")
     path = safe_artifact_path(root, entry["path"])
     if not path.is_file() or file_hash(path) != entry["sha256"]:
         raise WorkbenchError("比较模型工件哈希不匹配", "MODEL_HASH_MISMATCH")

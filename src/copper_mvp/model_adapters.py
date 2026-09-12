@@ -16,6 +16,7 @@ from copper_mvp.modeling import make_model
 from copper_mvp.classical_registry import CLASSICAL_METHODS
 from copper_mvp.statistical_registry import STATISTICAL_METHODS, SEQUENCE_METHODS
 from copper_mvp.specialized_registry import SPECIALIZED_METHODS
+from copper_mvp.bart_registry import BART_METHODS
 
 
 def preprocess():
@@ -46,7 +47,7 @@ class RegisteredModel:
         self.is_fitted = method_id == "Persistence"
         self.n_features_in_ = FEATURE_COUNT
 
-    def fit(self, X, y, sample_weight=None):
+    def fit(self, X, y, sample_weight=None, *, max_wall_seconds=None):
         if self.method_id in SEQUENCE_METHODS:
             raise WorkbenchError("序列方法需要完整事件上下文", "MODEL_CONTEXT_REQUIRED")
         X = validate_X(X)
@@ -62,6 +63,13 @@ class RegisteredModel:
         y = np.asarray(y, dtype=float)
         if y.shape != (len(X), 2) or not np.isfinite(y).all():
             raise WorkbenchError("训练目标必须是有限的 Cu/As 双列矩阵", "MODEL_TARGET_VALUES")
+        if self.method_id in BART_METHODS:
+            from copper_mvp.bart_models import BartModel
+            self._bart = BartModel(self.seed).fit(X, y, weight, max_wall_seconds=max_wall_seconds)
+            self.models, self.fit_warnings = self._bart.models, self._bart.fit_warnings
+            self.fit_metadata = self._bart.fit_metadata
+            self.is_fitted = True
+            return self
         if self.method_id in STATISTICAL_METHODS:
             from copper_mvp.statistical_models import StatisticalRegressor
             self._statistical = StatisticalRegressor(self.method_id, self.seed).fit(X, y)
@@ -119,7 +127,9 @@ class RegisteredModel:
         X = validate_X(X)
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
-        if self.method_id in SPECIALIZED_METHODS:
+        if self.method_id in BART_METHODS:
+            result = self._bart.predict(X)
+        elif self.method_id in SPECIALIZED_METHODS:
             result = self._specialized.predict(X)
         elif self.method_id in STATISTICAL_METHODS:
             result = self._statistical.predict(X)
@@ -139,6 +149,8 @@ class RegisteredModel:
         X = validate_X(X)
         if not self.is_fitted:
             raise WorkbenchError("模型尚未拟合", "MODEL_NOT_FITTED")
+        if self.method_id in BART_METHODS:
+            return self._bart.uncertainty(X)
         if self.method_id in SPECIALIZED_METHODS:
             return self._specialized.uncertainty(X)
         if self.method_id not in CLASSICAL_METHODS:

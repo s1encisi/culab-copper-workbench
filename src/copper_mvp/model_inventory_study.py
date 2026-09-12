@@ -28,7 +28,7 @@ SOURCE_FILES = tuple("src/copper_mvp/" + name for name in (
 
 
 def run_inventory_study(data, run_root, reference_id, request_key, methods, seeds,
-                        progress=lambda value: None):
+                        progress=lambda value: None, max_wall_seconds=1800):
     run_root = Path(run_root)
     methods, seeds = tuple(methods), tuple(seeds)
     service = ComparisonService(run_root / "model_comparisons", data)
@@ -47,7 +47,11 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
                 **{m: [reference_seed] for m in baseline_methods}}
     root = run_root / "model_inventory_studies" / digest(request_key)[:32]
     root.mkdir(parents=True, exist_ok=True)
-    code_hashes = {p: file_hash(PROJECT_ROOT / p) for p in SOURCE_FILES}
+    source_files = SOURCE_FILES
+    if "BART" in methods:
+        from copper_mvp.bart_registry import BART_SOURCE_FILES
+        source_files += BART_SOURCE_FILES
+    code_hashes = {p: file_hash(PROJECT_ROOT / p) for p in source_files}
     protocol = {
         "schema_version": "model-inventory-study.g6g.v1", "request_key": request_key,
         "methods": [method_spec(m, seeds[0]) for m in methods], "seeds": list(seeds),
@@ -58,7 +62,7 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
         "evaluation_as_of": old_protocol["evaluation_as_of"],
         "design": "Original five forward folds; fixed parameters; independent two-target scoring.",
         "replication": f"{len(seeds)} declared seeds per new method; original baseline seed retained.",
-        "max_wall_seconds_per_comparison": 1800, "native_threads": 1,
+        "max_wall_seconds_per_comparison": max_wall_seconds, "native_threads": 1,
         "external_2026_read": False, "automatic_promotion": False,
     }
     protocol_path = root / "protocol.json"
@@ -70,7 +74,7 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
     else:
         protocol["created_at"] = utc_now()
         write_json(protocol_path, protocol)
-        for path in SOURCE_FILES:
+        for path in source_files:
             destination = root / "executed_source" / path
             destination.parent.mkdir(parents=True, exist_ok=True)
             destination.write_bytes((PROJECT_ROOT / path).read_bytes())
@@ -81,7 +85,7 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
     try:
         for seed in seeds:
             request = ComparisonRequest(request_key=f"{request_key}-seed-{seed}",
-                methods=("Persistence", *methods), seed=seed, max_wall_seconds=1800)
+                methods=("Persistence", *methods), seed=seed, max_wall_seconds=max_wall_seconds)
             with ThreadPoolExecutor(max_workers=1) as executor:
                 current = service.submit(request, executor)
                 identifier = current["run_id"]
@@ -149,7 +153,7 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
         for row in result["metrics"]:
             sd = "—" if row["seed_mae_sd"] is None else f"{row['seed_mae_sd']:.6g}"
             lines.append(f"| {row['method_id']} | {row['target']} | {row['mae']:.6g} | {sd} | {row['paired_mae_difference']:.6g} |")
-        lines += ["", "概率指标、逐种子结果、时间块配对区间、分工况误差与资源记录见完整评价。NGBoost 输出为未校准的正态边际分布。",
+        lines += ["", "概率指标、逐种子结果、时间块配对区间、分工况误差与资源记录见完整评价。不确定性按各方法的登记合同报告，尚未进行独立时序校准。",
                   "", "[完整评价](evaluation.json) · [固定协议](protocol.json) · [逐事件预测](predictions.csv)", ""]
         (root / "report.md").write_text("\n".join(lines), encoding="utf-8")
         state.update(status=result["status"], finished_at=utc_now(),

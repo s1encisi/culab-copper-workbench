@@ -185,6 +185,8 @@ class ModelLifecycle:
     def quality_gate(descriptor,shadow,purpose):
         metric=descriptor["benchmark"]
         failures=[]
+        if metric.get("sampling_diagnostics_passed") is False:
+            failures.append("SAMPLING_DIAGNOSTICS")
         if purpose=="scenario_prediction" and not descriptor.get("proxy_approved"):
             failures.append("PROXY_QUALIFICATION_REQUIRED")
         if descriptor.get("causal_control"):failures.append("CAUSAL_CONTROL_NOT_SUPPORTED")

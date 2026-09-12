@@ -58,6 +58,8 @@ def verify_inventory(run_root, study_id, output):
                 continue
             model, loaded_entry = load_registered_model(folder, manifest, fit_protocol, method, fold)
             assert entry == loaded_entry and model.is_fitted
+            if method == "BART":
+                assert model.fit_metadata["diagnostics_passed"], (item["seed"], fold, model.fit_metadata["diagnostics"])
             evidence = {"comparison_id": item["comparison_id"], "seed": item["seed"],
                         "method": method, "fold": fold, "sha256": entry["sha256"],
                         "warnings": dict(Counter(w["category"] for w in model.fit_warnings))}
@@ -80,6 +82,11 @@ def verify_inventory(run_root, study_id, output):
                     for column, target in enumerate(("cu", "as")):
                         expected_std = uncertainty[uncertainty.target.eq(target)].set_index("event_id").loc[events, "std"]
                         np.testing.assert_allclose(distribution["std"][:, column], expected_std, rtol=1e-10, atol=1e-9)
+                if method == "BART":
+                    quantiles = model.predict_uncertainty(X)["values"]
+                    for column, target in enumerate(("cu", "as")):
+                        expected_q = uncertainty[uncertainty.target.eq(target)].set_index("event_id").loc[events, ["q10", "q50", "q90"]].to_numpy(float)
+                        np.testing.assert_allclose(quantiles[:, :, column], expected_q, rtol=1e-10, atol=1e-9)
                 if method == "EBM":
                     explained = model._specialized
                     reconstructed = np.column_stack([

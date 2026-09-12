@@ -59,6 +59,8 @@ class ArtifactSources:
                 "paired_ci95":metrics["paired_mae_ci95"],"negative_predictions":metrics["negative_predictions"],
                 "coverage":result["coverage"][method]["coverage"],"p95_ms":resource["single_predict_p95_ms"],
                 "mode_metrics":{},"baseline_modes":{}}
+            if method == "BART":
+                quality["sampling_diagnostics_passed"] = all(a.get("fit_metadata", {}).get("diagnostics_passed", False) for a in entries)
             forecast_table=pd.read_csv(root/"oof_predictions.csv")
             candidate_rows=forecast_table[forecast_table.method_id.eq(method)].set_index("event_id")
             baseline_rows=forecast_table[forecast_table.method_id.eq("Persistence")].set_index("event_id")
@@ -126,6 +128,10 @@ class ArtifactSources:
             from copper_mvp.specialized_models import specialized_dependencies
             specialized_dependencies()
             dependencies.update({name: metadata.version(name) for name in family["dependencies"]})
+        if method == "BART":
+            from copper_mvp.bart_trees import numeric_evaluator
+            numeric_evaluator()
+            dependencies.update({name: metadata.version(name) for name in family["dependencies"]})
         descriptor=safe({"schema_version":"model-artifact-set.g5c.v1","source_kind":request.source_kind,"source_id":request.source_id,
             "method_id":method,"target":target,"unit":TARGET_UNITS[target],"seed":seed,"task_id":TASK_ID,
             "feature_columns":self.data.feature_columns,"feature_spec_hash":digest(self.data.feature_columns),
@@ -154,6 +160,9 @@ class ArtifactSources:
         if descriptor["method_id"] in ("CatBoost", "NGBoost", "EBM", "Cubist"):
             from copper_mvp.specialized_models import specialized_dependencies
             specialized_dependencies()
+        if descriptor["method_id"] == "BART":
+            from copper_mvp.bart_trees import numeric_evaluator
+            numeric_evaluator()
         for name,version in descriptor["dependencies"].items():
             if metadata.version(name)!=version:
                 raise WorkbenchError("模型依赖版本与登记记录不一致","MODEL_VERSION_MISMATCH")

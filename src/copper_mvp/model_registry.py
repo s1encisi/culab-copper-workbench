@@ -9,10 +9,11 @@ from copper_mvp.common import WorkbenchError, digest
 from copper_mvp.classical_registry import CLASSICAL_METHODS, classical_spec
 from copper_mvp.statistical_registry import STATISTICAL_METHODS, statistical_spec
 from copper_mvp.specialized_registry import SPECIALIZED_METHODS, specialized_spec
+from copper_mvp.bart_registry import BART_METHODS, bart_spec
 
 REGISTRY_VERSION = "model-registry.g2a.v1"
 LEGACY_METHOD_IDS = ("Persistence", "DeltaRidge", "DeltaHGB", "ElasticNet", "Huber", "PLS")
-METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS + STATISTICAL_METHODS + SPECIALIZED_METHODS
+METHOD_IDS = LEGACY_METHOD_IDS + CLASSICAL_METHODS + STATISTICAL_METHODS + SPECIALIZED_METHODS + BART_METHODS
 FEATURE_COUNT = 114
 NUMERIC_COUNT = 110
 SEED = 20260905
@@ -36,6 +37,8 @@ IMPLEMENTATIONS = {
 
 
 def method_spec(method_id: str, seed: int = SEED) -> dict:
+    if method_id in BART_METHODS:
+        return bart_spec(seed)
     if method_id in SPECIALIZED_METHODS:
         return specialized_spec(method_id, seed)
     if method_id in STATISTICAL_METHODS:
@@ -64,8 +67,8 @@ def method_spec(method_id: str, seed: int = SEED) -> dict:
 
 
 def catalog() -> dict:
-    return {"schema_version": "model-registry.g6g.v1", "items": [method_spec(m) for m in METHOD_IDS],
-            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS) + len(STATISTICAL_METHODS) + len(SPECIALIZED_METHODS), "automatic_promotion": False,
+    return {"schema_version": "model-registry.g6h.v1", "items": [method_spec(m) for m in METHOD_IDS],
+            "registered_count": len(METHOD_IDS), "new_method_count": 3 + len(CLASSICAL_METHODS) + len(STATISTICAL_METHODS) + len(SPECIALIZED_METHODS) + len(BART_METHODS), "automatic_promotion": False,
             "default_comparison_methods": list(LEGACY_METHOD_IDS)}
 
 
@@ -74,10 +77,12 @@ class ComparisonRequest(BaseModel):
     request_key: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9_.:-]+$")
     methods: tuple[str, ...] = LEGACY_METHOD_IDS
     seed: int = Field(default=SEED, ge=0, le=2**31 - 1)
-    max_wall_seconds: int = Field(default=900, ge=30, le=1800)
+    max_wall_seconds: int = Field(default=900, ge=30, le=21600)
 
     @model_validator(mode="after")
     def validate_methods(self):
+        if self.max_wall_seconds > 1800 and not any(m in BART_METHODS for m in self.methods):
+            raise ValueError("长时间预算仅用于 BART 研究")
         if (len(set(self.methods)) != len(self.methods) or not self.methods
             or any(m not in METHOD_IDS for m in self.methods) or "Persistence" not in self.methods):
             raise ValueError("方法必须唯一、已注册，且包含 Persistence 参照")
