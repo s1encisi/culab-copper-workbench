@@ -1,16 +1,18 @@
 import {useEffect,useRef,useState} from 'react';
 import {Send,Plus,Pause,Play,Square,MessageSquare,LoaderCircle,BookOpen} from 'lucide-react';
 import {api,date,fmt,type Run} from './api';
+import {Drawer,Notice,JsonDetails,request,text,object,type RecordValue} from './WorkspaceUI';
+import {useCallback} from 'react';
 
 type Session={id:string;title:string;context:Record<string,string|null>;messages:{role:string;text:string;task_id:string|null}[]};
-type Evidence={evidence_id:string;tool:string;data:{summary:unknown;local_facts:Record<string,{value:number|null;unit:string}>}};
+type Evidence={evidence_id:string;tool:string;data:{summary:unknown;local_facts:Record<string,{value?:number|null;unit?:string;kind?:string;citation?:RecordValue}>}};
 type Task={id:string;status:string;version:number;model_calls:number;tool_calls:number;cache_hits:number;
   usage:{spent_cny:number;unsettled_cny:number};error:{message:string}|null;result:{answer:string}|null;evidence:Evidence[]};
 type Info={model:string;live_calls_enabled:boolean;max_cost_cny:number};
 type Resource={run_id:string;status:string;created_at:string;request?:Record<string,unknown>};
 const active=new Set(['queued','running','pausing','cancelling']);
 const labels:Record<string,string>={queued:'等待执行',running:'正在取证',pausing:'等待暂停边界',paused:'已暂停',cancelling:'正在取消',cancelled:'已取消',completed:'已完成',failed:'未完成',needs_attention:'需要处理'};
-const tools:Record<string,string>={project_status:'工作台能力',model_metrics:'模型指标',list_model_comparisons:'模型比较目录',list_optimizations:'优化目录',optimization_summary:'优化统计',probe_constraints:'约束探测',probe_response:'模型响应',probe_resolution:'分辨率对照',event_context:'事件工况'};
+const tools:Record<string,string>={project_status:'工作台能力',model_metrics:'模型指标',list_model_comparisons:'模型比较目录',list_optimizations:'优化目录',optimization_summary:'优化统计',probe_constraints:'约束探测',probe_response:'模型响应',probe_resolution:'分辨率对照',event_context:'事件工况',search_documents:'文档检索',read_document:'文档引用'};
 
 const factLabels:Record<string,string>={development_events:'开发事件',oof_events:'OOF 事件',front_points:'原前沿点数',probe_points:'探测点数',feasible_points:'可行点数',probe_front_points:'探测前沿点数',feasible_rate:'可行率',search_evaluations:'搜索求值',variable_count:'变量数量',common_events:'共同评价事件',as_allowance_mg_l:'As 允许增量 (mg/L)',status:'状态',decision_at:'决策时间'};
 function EvidenceSummary({value}:{value:unknown}){
@@ -23,19 +25,24 @@ function EvidenceSummary({value}:{value:unknown}){
 }
 
 function EvidenceCard({item}:{item:Evidence}){
-  const facts=Object.entries(item.data.local_facts||{});
-  return <details className="research-evidence" id={item.evidence_id}>
+  const facts=Object.entries(item.data.local_facts||{});const [reference,setReference]=useState<RecordValue|null>(null);const[error,setError]=useState('');
+  const close=useCallback(()=>{setReference(null);setError('');},[]);
+  async function open(citation:RecordValue){setReference(null);setError('');try{const scope=citation.scope_as_of??citation.as_of;setReference(await request<RecordValue>('/v2/knowledge/citations/'+text(citation.chunk_id)+(scope?'?as_of='+encodeURIComponent(text(scope)):'')));}catch(e){setError((e as Error).message);}}
+  return <><details className="research-evidence" id={item.evidence_id}>
     <summary><BookOpen size={15}/>{tools[item.tool]||item.tool}<small>{item.evidence_id.slice(-6)}</small></summary>
-    {facts.length?<div className="research-facts">{facts.map(([key,fact])=><span key={key}>{key==='current_cu'?'当前 Cu':key==='current_as'?'当前 As':key}<strong>{fmt(fact.value,3)} {fact.unit}</strong></span>)}</div>:null}
+    {facts.length?<div className="research-facts">{facts.map(([key,fact])=>fact.kind==='document_reference'&&fact.citation?<button key={key} onClick={()=>void open(fact.citation!)}>查看文档片段 · {text(fact.citation.doc_id).slice(0,8)}</button>:<span key={key}>{key==='current_cu'?'当前 Cu':key==='current_as'?'当前 As':key}<strong>{fmt(fact.value,3)} {fact.unit}</strong></span>)}</div>:null}
     <EvidenceSummary value={item.data.summary}/><details className="research-raw"><summary>查看完整数据</summary><pre>{JSON.stringify(item.data.summary,null,2)}</pre></details>
-  </details>;
+  </details>{error?<Notice tone="error">{error}</Notice>:null}{reference?<Drawer title="文档证据" onClose={close}><p className="document-quote">{text(reference.text)}</p><a className="workspace-link" href={text(object(reference.citation).source_url)} target="_blank" rel="noreferrer">打开原文位置</a><JsonDetails value={reference.citation}/></Drawer>:null}</>;
 }
-export function ResearchPanel({eventId}:{eventId:string}){
+
+export function ResearchPanel({eventId,knowledgeRef,clearKnowledgeRef}:{eventId:string;knowledgeRef?:Record<string,unknown>|null;clearKnowledgeRef?:()=>void}){
   const [sessions,setSessions]=useState<Session[]>([]);
   const [sessionId,setSessionId]=useState<string|null>(null);
   const [conversation,setConversation]=useState<Session|null>(null);
   const [task,setTask]=useState<Task|null>(null);
   const [question,setQuestion]=useState('');
+  const [memory,setMemory]=useState<RecordValue|null>(null);
+  const closeMemory=useCallback(()=>setMemory(null),[]);
   const [error,setError]=useState('');
   const [sending,setSending]=useState(false);
   const [info,setInfo]=useState<Info|null>(null);
@@ -102,7 +109,7 @@ export function ResearchPanel({eventId}:{eventId:string}){
     const text=question.trim();
     const selected=runs.find(r=>r.run_id===runId);
     const context={event_id:(selected?.request.event_id as string)||eventId||null,optimization_run_id:runId||null,
-                   model_comparison_id:modelId||null,optimizer_comparison_id:comparisonId||null};
+                   model_comparison_id:modelId||null,optimizer_comparison_id:comparisonId||null,...(knowledgeRef?{knowledge_refs:[knowledgeRef]}:{})};
     try{
       let id=sessionId;
       if(!id){const created=await api<Session>('/v2/sessions',{title:text.slice(0,40),context});id=created.id;justCreated.current=id;setConversation(created);setSessions(values=>[created,...values]);setSessionId(id);}
@@ -116,15 +123,17 @@ export function ResearchPanel({eventId}:{eventId:string}){
     try{const current=await api<Task>('/v2/tasks/'+task.id);setTask(await api<Task>('/v2/tasks/'+task.id+'/'+action,{expected_version:current.version}));}
     catch(e){setError(e instanceof Error?e.message:'操作未完成');setTask(await api<Task>('/v2/tasks/'+task.id));}
   }
+  async function readMemory(){if(!sessionId)return;setError('');try{setMemory(await request<RecordValue>('/v2/sessions/'+sessionId+'/memory'));}catch(e){setError((e as Error).message);}}
+  async function memoryAction(method:string){if(!sessionId)return;setError('');try{await request('/v2/sessions/'+sessionId+'/memory',{method,body:method==='POST'?{ttl_hours:168}:undefined});await readMemory();}catch(e){setError((e as Error).message);}}
   return <div className="research-layout">
     <aside className="research-sessions"><button className="secondary" onClick={()=>{setSessionId(null);setConversation(null);setTask(null);setRunId('');setModelId('');setComparisonId('');}}><Plus size={16}/>新对话</button>
       {sessions.map(s=><button key={s.id} className={s.id===sessionId?'selected':''} onClick={()=>setSessionId(s.id)}><MessageSquare size={15}/><span>{s.title}</span></button>)}
     </aside>
-    <section className="research-main">
-      <div className="research-context">
-        <label className="field">参考优化<select aria-label="参考优化" value={runId} onChange={e=>{setRunId(e.target.value);setComparisonId('');}} disabled={!!blocked}><option value="">未指定</option>{runs.map(r=><option key={r.run_id} value={r.run_id}>{date(r.created_at)} · {r.run_id.slice(0,6)}</option>)}</select></label>
+    <section className="research-main">{sessionId?<div className="research-memory-bar"><button onClick={()=>void readMemory()}>会话记忆</button></div>:null}
+      <div className="research-context">{knowledgeRef?<div className="knowledge-context-chip"><BookOpen size={16}/>已选择文档引用<button onClick={clearKnowledgeRef}>移除</button></div>:null}
+        <details className="research-resource-picker"><summary>参考资源与来源</summary><div className="research-resource-fields"><label className="field">参考优化<select aria-label="参考优化" value={runId} onChange={e=>{setRunId(e.target.value);setComparisonId('');}} disabled={!!blocked}><option value="">未指定</option>{runs.map(r=><option key={r.run_id} value={r.run_id}>{date(r.created_at)} · {r.run_id.slice(0,6)}</option>)}</select></label>
         <label className="field">模型比较<select aria-label="模型比较" value={modelId} onChange={e=>setModelId(e.target.value)} disabled={!!blocked}><option value="">未指定</option>{models.map(r=><option key={r.run_id} value={r.run_id}>{r.request?.request_key as string||r.run_id.slice(0,8)}</option>)}</select></label>
-        <label className="field">优化器比较<select aria-label="优化器比较" value={comparisonId} onChange={e=>{setComparisonId(e.target.value);setRunId('');}} disabled={!!blocked}><option value="">未指定</option>{comparisons.map(r=><option key={r.run_id} value={r.run_id}>{r.request?.request_key as string||r.run_id.slice(0,8)}</option>)}</select></label>
+        <label className="field">优化器比较<select aria-label="优化器比较" value={comparisonId} onChange={e=>{setComparisonId(e.target.value);setRunId('');}} disabled={!!blocked}><option value="">未指定</option>{comparisons.map(r=><option key={r.run_id} value={r.run_id}>{r.request?.request_key as string||r.run_id.slice(0,8)}</option>)}</select></label></div></details>
       </div>
       <div className="research-messages" aria-live="polite">
         {!conversation?.messages.length?<div className="research-intro"><MessageSquare size={30}/><h2>围绕证据，直接提问</h2><p>比较模型、查看工况，或追问一次优化为什么得到这样的结果。</p>
@@ -143,6 +152,7 @@ export function ResearchPanel({eventId}:{eventId:string}){
         <div><small>{info?.live_calls_enabled?info.model+' · 每任务上限 ¥'+info.max_cost_cny:'真实模型调用尚未启用'}</small><button className="primary" disabled={!!blocked||!question.trim()||!info?.live_calls_enabled}>{sending||running?<LoaderCircle size={16} className="spin"/>:<Send size={16}/>}发送</button></div>
       </form>
       {error?<div className="error-box" role="alert">{error}</div>:null}
+      {memory?<Drawer title="会话记忆" onClose={closeMemory}><Notice>数值、单位和审批从权威记录重新读取，摘要不授予执行权限。</Notice><div className="workspace-actions"><button onClick={()=>void memoryAction('POST')}>更新记忆</button><button onClick={()=>void memoryAction('DELETE')}>删除此记忆</button></div><JsonDetails value={memory} label="查看目标、来源与未完成事项"/></Drawer>:null}
     </section>
   </div>;
 }

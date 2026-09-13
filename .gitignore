@@ -88,3 +88,5 @@ Thumbs.db
 *.log
 credentials*.json
 *service-account*.json
+
+/.playwright-cli/
