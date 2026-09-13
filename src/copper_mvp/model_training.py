@@ -94,6 +94,9 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
     if any(method_spec(m, request.seed).get("input_kind") == "anchored_process_sequence" for m in request.methods):
         from copper_mvp.temporal_registry import temporal_source_hashes
         protocol["code_hashes"].update(temporal_source_hashes())
+    if "TabPFN" in request.methods:
+        from copper_mvp.tabpfn_registry import tabpfn_source_hashes
+        protocol["code_hashes"].update(tabpfn_source_hashes())
     write_json(output / "protocol.json", protocol)
     started = time.perf_counter()
     timings = []; artifacts = []; predictions = []; uncertainty_predictions = []
@@ -157,7 +160,7 @@ def train_comparison(data, request: ComparisonRequest, output: Path, progress=la
                                     ordered_times = [source_time(data.row(event).decision_at) for event in train_ids]
                                     if any(a > b for a, b in zip(ordered_times, ordered_times[1:])):
                                         raise WorkbenchError("CatBoost 训练行必须按时间排序", "MODEL_TRAINING_ORDER")
-                                if method_id in ("BART", "SymbolicRegression", "TabNet", "FTTransformer", "NODE"):
+                                if method_id in ("BART", "SymbolicRegression", "TabNet", "FTTransformer", "NODE", "TabPFN"):
                                     model.fit(X_train, y_train, max_wall_seconds=request.max_wall_seconds-(time.perf_counter()-started))
                                 else:
                                     model.fit(X_train, y_train)
@@ -265,6 +268,8 @@ def load_registered_model(root: Path, manifest: dict, protocol: dict, method_id:
         load_tensor_runtime()
         if recorded["method_version"] != current["method_version"]:
             raise WorkbenchError("时序神经模型版本不兼容", "COMPARISON_MODEL_VERSION")
+    if method_id == "TabPFN" and recorded["method_version"] != current["method_version"]:
+        raise WorkbenchError("TabPFN 实现版本不兼容", "COMPARISON_MODEL_VERSION")
     path = safe_artifact_path(root, entry["path"])
     if not path.is_file() or file_hash(path) != entry["sha256"]:
         raise WorkbenchError("比较模型工件哈希不匹配", "MODEL_HASH_MISMATCH")

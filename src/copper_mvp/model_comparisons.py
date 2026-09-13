@@ -85,6 +85,9 @@ class ComparisonService:
         if any(method_spec(m, request.seed).get("input_kind") == "anchored_process_sequence" for m in request.methods):
             from copper_mvp.temporal_registry import temporal_source_hashes
             fingerprint_data["temporal_adapters"] = temporal_source_hashes()
+        if "TabPFN" in request.methods:
+            from copper_mvp.tabpfn_registry import tabpfn_source_hashes
+            fingerprint_data["tabpfn_adapters"] = tabpfn_source_hashes()
         fingerprint = digest(fingerprint_data)
         with self.lock:
             if (root / "state.json").exists():

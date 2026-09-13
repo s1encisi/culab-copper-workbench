@@ -60,6 +60,9 @@ def run_inventory_study(data, run_root, reference_id, request_key, methods, seed
     if any(method_spec(m, seeds[0]).get("input_kind") == "anchored_process_sequence" for m in methods):
         from copper_mvp.temporal_registry import TEMPORAL_FILES
         source_files += TEMPORAL_FILES
+    if "TabPFN" in methods:
+        from copper_mvp.tabpfn_registry import TABPFN_FILES
+        source_files += TABPFN_FILES
     code_hashes = {p: file_hash(PROJECT_ROOT / p) for p in source_files}
     protocol = {
         "schema_version": "model-inventory-study.g6g.v1", "request_key": request_key,

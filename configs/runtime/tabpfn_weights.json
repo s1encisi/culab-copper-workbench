@@ -1,0 +1,10 @@
+{
+  "repository": "Prior-Labs/TabPFN-v2-reg",
+  "revision": "4972a65a1b30806315c6f92499959ffbfc69a673",
+  "filename": "tabpfn-v2-regressor-v2_default.ckpt",
+  "sha256": "2ab5a07d5c41dfe6db9aa7ae106fc6de898326c2765be66505a07e2868c10736",
+  "size": 44390977,
+  "license": "Prior Labs License 1.1",
+  "attribution": "Built with PriorLabs-TabPFN",
+  "status": "downloaded_and_verified"
+}
