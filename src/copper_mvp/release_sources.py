@@ -220,7 +220,9 @@ class ArtifactSources:
                 self.cache[key]=load_registered_model(root,manifest,protocol,descriptor["method_id"],fold)[0]
             else:
                 self.cache[key]=joblib.load(path)
-        values=self.cache[key].predict_context(self.data,[event]) if descriptor["source_kind"]=="model_comparison" else self.cache[key].predict(self.data.X.loc[[event]].to_numpy(float))
+        from threadpoolctl import threadpool_limits
+        with threadpool_limits(limits=1):
+            values=self.cache[key].predict_context(self.data,[event]) if descriptor["source_kind"]=="model_comparison" else self.cache[key].predict(self.data.X.loc[[event]].to_numpy(float))
         return float(values[0,("cu","as").index(descriptor["target"])]),{"artifact_sha256":key,"execution":"model_inference"}
 
     def dynamic_replay(self,descriptor,entry):
@@ -270,7 +272,7 @@ class ArtifactSources:
                     target_index=("cu","as").index(descriptor["target"])
                     origin=float(self.data.X.loc[event].iloc[target_index])
                     scale=model.fit_metadata["target_delta_scale"][target_index]
-                    valid,numerical=neural_replay_error(value,expected,origin,scale)
+                    valid,numerical=neural_replay_error(value,expected,origin,scale,method=descriptor["method_id"])
                     evidence["numerical_replay"]=numerical
                 else:
                     valid=np.isfinite(value) and np.isclose(value,expected,rtol=1e-10,atol=1e-9)

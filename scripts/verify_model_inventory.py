@@ -83,7 +83,7 @@ def verify_inventory(run_root, study_id, output):
                     full=(model.predict_context(data,all_events) if model.spec.get("input_kind")=="anchored_process_sequence"
                           else model.predict(data.X.loc[all_events].to_numpy(float)))
                     np.testing.assert_allclose(full,part[["cu","as"]].to_numpy(float),rtol=1e-10,atol=1e-9)
-                    passed,numerical=neural_replay_error(predicted,expected,X[:,:2],model.fit_metadata["target_delta_scale"])
+                    passed,numerical=neural_replay_error(predicted,expected,X[:,:2],model.fit_metadata["target_delta_scale"],method=method)
                     assert passed,(method,fold,numerical)
                     evidence["float32_replay"]=numerical
                     evidence["strict_full_batch_replay"]=True
@@ -103,7 +103,7 @@ def verify_inventory(run_root, study_id, output):
                         expected_q = uncertainty[uncertainty.target.eq(target)].set_index("event_id").loc[events, ["q10", "q50", "q90"]].to_numpy(float)
                         if method == "TabPFN":
                             scale=model.fit_metadata["target_delta_scale"][column]
-                            valid,detail=neural_replay_error(quantiles[:,:,column],expected_q,X[:,column,None],scale)
+                            valid,detail=neural_replay_error(quantiles[:,:,column],expected_q,X[:,column,None],scale,method=method)
                             assert valid,detail
                         else:
                             np.testing.assert_allclose(quantiles[:, :, column], expected_q, rtol=1e-10, atol=1e-9)
