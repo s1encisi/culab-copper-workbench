@@ -1,6 +1,6 @@
 """Numerical replay criteria for float32 neural predictions in physical units."""
 import numpy as np
-NEURAL_METHODS={"TabNet","FTTransformer","NODE","GRU","LSTM","CausalTCN"}
+NEURAL_METHODS={"TabNet","FTTransformer","NODE","GRU","LSTM","CausalTCN","TabPFN"}
 
 
 def neural_replay_error(actual,expected,current,target_scale):

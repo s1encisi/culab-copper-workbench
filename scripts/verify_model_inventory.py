@@ -97,11 +97,16 @@ def verify_inventory(run_root, study_id, output):
                     for column, target in enumerate(("cu", "as")):
                         expected_std = uncertainty[uncertainty.target.eq(target)].set_index("event_id").loc[events, "std"]
                         np.testing.assert_allclose(distribution["std"][:, column], expected_std, rtol=1e-10, atol=1e-9)
-                if method == "BART":
+                if method in ("BART", "TabPFN"):
                     quantiles = model.predict_uncertainty(X)["values"]
                     for column, target in enumerate(("cu", "as")):
                         expected_q = uncertainty[uncertainty.target.eq(target)].set_index("event_id").loc[events, ["q10", "q50", "q90"]].to_numpy(float)
-                        np.testing.assert_allclose(quantiles[:, :, column], expected_q, rtol=1e-10, atol=1e-9)
+                        if method == "TabPFN":
+                            scale=model.fit_metadata["target_delta_scale"][column]
+                            valid,detail=neural_replay_error(quantiles[:,:,column],expected_q,X[:,column,None],scale)
+                            assert valid,detail
+                        else:
+                            np.testing.assert_allclose(quantiles[:, :, column], expected_q, rtol=1e-10, atol=1e-9)
                 if method == "SymbolicRegression":
                     from copper_mvp.symbolic_expression import evaluate_expression
                     payload = model._symbolic.equations()
