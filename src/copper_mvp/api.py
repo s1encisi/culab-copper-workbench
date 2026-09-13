@@ -26,6 +26,7 @@ from copper_mvp.api_ensembles import ensemble_router
 from copper_mvp.api_releases import release_router
 from copper_mvp.api_portfolios import portfolio_router
 from copper_mvp.api_classical import classical_router
+from copper_mvp.api_knowledge import knowledge_router
 from copper_mvp.access import Principal, PROJECT
 
 
@@ -56,6 +57,7 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
     app.include_router(release_router())
     app.include_router(portfolio_router())
     app.include_router(classical_router())
+    app.include_router(knowledge_router())
 
     def workbench(request: Request) -> Workbench:
         return request.app.state.workbench
@@ -92,6 +94,8 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
                     except WorkbenchError:
                         return JSONResponse(status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号没有计算权限"}})
         response = await call_next(request)
+        if request.url.path.startswith("/api/v2/knowledge/"):
+            response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response
 

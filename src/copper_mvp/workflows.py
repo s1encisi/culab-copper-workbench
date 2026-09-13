@@ -23,6 +23,7 @@ from copper_mvp.modeling import MODEL_VERSION, ModelManager
 from copper_mvp.optimization import solve
 from copper_mvp.storage import RunStore
 from copper_mvp.research_store import ResearchStore
+from copper_mvp.knowledge_store import KnowledgeStore
 from copper_mvp.access import AccessControl
 from copper_mvp.research_service import ResearchService
 from copper_mvp.control.client import MockClient
@@ -73,6 +74,7 @@ class Workbench:
         self.futures = {}
         self.lock = threading.Lock()
         self.access = AccessControl(ResearchStore(self.store))
+        self.knowledge = KnowledgeStore(self.root)
         self.research = ResearchService(self, self.access)
         self.control = CommandService(self.store, self.access, MockClient.from_env())
 

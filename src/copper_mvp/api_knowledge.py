@@ -1,0 +1,85 @@
+"""Authenticated local document and retrieval endpoints."""
+from fastapi import APIRouter, Request, Response
+from pydantic import AwareDatetime
+from starlette.concurrency import run_in_threadpool
+
+from copper_mvp.common import WorkbenchError
+from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess, DocumentReview, KnowledgeQuery
+from copper_mvp.knowledge_parsing import MAX_BYTES
+
+
+def knowledge_router():
+    router = APIRouter(prefix="/api/v2/knowledge")
+
+    def service(request):
+        actor = getattr(request.state, "principal", None)
+        if actor is None:
+            raise WorkbenchError("需要本机访问码", "UNAUTHENTICATED")
+        return request.app.state.workbench.knowledge, actor
+
+    @router.get("/documents")
+    def documents(request: Request, as_of: AwareDatetime | None = None):
+        store, actor = service(request)
+        return {"items": store.list(actor, as_of)}
+
+    @router.post("/documents", status_code=201)
+    def register(request: Request, payload: DocumentSpec):
+        store, actor = service(request)
+        return store.register(actor, payload)
+
+    @router.get("/documents/{doc_id}/versions/{version}")
+    def inspect(request: Request, doc_id: str, version: int):
+        store, actor = service(request)
+        return store.inspect(actor, doc_id, version)
+
+    @router.put("/documents/{doc_id}/versions/{version}/content")
+    async def upload(request: Request, doc_id: str, version: int):
+        store, actor = service(request)
+        store.authorize_upload(actor, doc_id, version)
+        payload = bytearray()
+        async for part in request.stream():
+            if len(payload) + len(part) > MAX_BYTES:
+                raise WorkbenchError("文档大小不能超过 16 MB", "DOCUMENT_SIZE")
+            payload.extend(part)
+        return await run_in_threadpool(store.upload, actor, doc_id, version, bytes(payload))
+
+    @router.post("/documents/{doc_id}/versions/{version}/review")
+    def review(request: Request, doc_id: str, version: int, payload: DocumentReview):
+        store, actor = service(request)
+        return store.review(actor, doc_id, version, payload.accepted, payload.note)
+
+    @router.post("/documents/{doc_id}/versions/{version}/index")
+    def index(request: Request, doc_id: str, version: int):
+        store, actor = service(request)
+        return store.build_index(actor, doc_id, version)
+
+    @router.put("/documents/{doc_id}/access")
+    def access(request: Request, doc_id: str, payload: DocumentAccess):
+        store, actor = service(request)
+        return store.change_access(actor, doc_id, payload)
+
+    @router.delete("/documents/{doc_id}")
+    def delete(request: Request, doc_id: str):
+        store, actor = service(request)
+        return store.delete(actor, doc_id)
+
+    @router.get("/documents/{doc_id}/versions/{version}/source")
+    def source(request: Request, doc_id: str, version: int, as_of: AwareDatetime | None = None):
+        store, actor = service(request)
+        raw, format = store.source(actor, doc_id, version, as_of)
+        media = {"md": "text/plain; charset=utf-8", "pdf": "application/pdf",
+                 "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}[format]
+        return Response(raw, media_type=media, headers={"Content-Disposition": f'attachment; filename="document-v{version}.{format}"',
+                                                       "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+    @router.post("/search")
+    def search(request: Request, payload: KnowledgeQuery):
+        store, actor = service(request)
+        return store.search(actor, **payload.model_dump())
+
+    @router.get("/citations/{chunk_id}")
+    def citation(request: Request, chunk_id: str, as_of: AwareDatetime | None = None):
+        store, actor = service(request)
+        return store.resolve(actor, chunk_id, as_of)
+
+    return router
