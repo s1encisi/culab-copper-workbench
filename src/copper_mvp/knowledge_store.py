@@ -294,6 +294,13 @@ class KnowledgeStore:
                 "source_url": f"/api/v2/knowledge/documents/{row['doc_id']}/versions/{row['version']}/source?as_of={quote(as_of, safe='')}"
                               + (f"#page={item['location']['page']}" if item["location"].get("page") else "")}
 
+    def cache_signature(self, actor, as_of=None):
+        with self.lock, self.connection() as c:
+            visible = self._visible(c, actor, timestamp(as_of))
+            revision = c.execute("SELECT COALESCE(MAX(id),0) FROM knowledge_audit").fetchone()[0]
+            return digest({"revision": revision,
+                           "visible": sorted((row["doc_id"], row["version"], row["index_id"]) for row in visible.values())})
+
     def search(self, actor, query, as_of=None, limit=5, context_tokens=6000):
         bound = timestamp(as_of)
         with self.lock, self.connection() as c:

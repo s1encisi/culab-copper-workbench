@@ -155,8 +155,16 @@ ParEGO/NEHVI 支持已接入的约束概率路径；MES/JES 首版通过 --bench
 
 接口位于 /api/v2/knowledge：先 POST /documents 登记元数据与访问者，再 PUT /documents/{doc_id}/versions/{version}/content 上传原文，必要时审核，最后 POST 同版本的 /index 建立索引。POST /search 返回带版本、页码或段落、内容哈希的引用；引用和原文下载每次重新检查权限。更改访问者或撤销文档立即影响后续检索；新版本索引成功前保留旧索引。
 
-MD 表格保留完整行、表头与单位；DOCX 保留合并单元格结构、原始公式 XML 和图片位置。PDF 的版面、表格和公式需要审核。扫描页通过同一版本的 /ocr 接口调用本机 RapidOCR；请求需携带当前 parse_hash。识别结果保存分数、文字框、页图哈希及模型版本，随后通过 /corrections 校正表格或公式，再以 /review 审核准确的解析哈希。长表格按完整行组切块并重复表头与脚注。修改解析时保留旧索引，完成审核和重建后原子切换；旧解析保留为可回查修订，删除文档时一并清除。会话记忆及助手文档工具接入继续在 G6m 完成。文档文字是证据，不能授予审批或设备操作权限。
+MD 表格保留完整行、表头与单位；DOCX 保留合并单元格结构、原始公式 XML 和图片位置。PDF 的版面、表格和公式需要审核。扫描页通过同一版本的 /ocr 接口调用本机 RapidOCR；请求需携带当前 parse_hash。识别结果保存分数、文字框、页图哈希及模型版本，随后通过 /corrections 校正表格或公式，再以 /review 审核准确的解析哈希。长表格按完整行组切块并重复表头与脚注。修改解析时保留旧索引，完成审核和重建后原子切换；旧解析保留为可回查修订，删除文档时一并清除。会话记忆和本地文档引用工具的接入见下一节；领域评价与模型侧片段推理继续推进。文档文字是证据，不能授予审批或设备操作权限。
 
 运行 `python -B scripts/verify_knowledge.py --output runs/g6m/verification-新编号` 可执行断网条件下的合成检索对照、引用回读与权限撤销验证。该结果用于接口验收；经审核的真实领域问答集评价仍待后续完成。
 
 扫描验证使用本地合成页。可用含 reportlab 的 Python 运行 `scripts/create_ocr_fixture.py --font <本地中文字体> --output runs/g6m/fixture-新编号`，再运行 `scripts/verify_knowledge_ocr.py --fixture runs/g6m/fixture-新编号/scan.pdf --output runs/g6m/ocr-新编号`。模型来源：[RapidOCR](https://github.com/RapidAI/RapidOCR)，检测/方向/识别模型的固定哈希位于 configs/runtime/knowledge_ocr.json。OCR 分数不是经过校准的正确率；合成页验证只证明该接口链路，不能替代真实领域文档评价。
+
+## G6m 会话记忆与文档引用
+
+版本 0.24.2 增加基于任务和证据引用的会话记忆。POST /api/v2/sessions/{id}/memory 创建有有效期的记忆，GET 重新读取权威记录，DELETE 删除该记忆。自动恢复会检查来源变化；删除后的记忆不会自动重建，直到用户再次创建。初始研究目标、最近任务和未完成任务分别保留；数值与单位从原证据重读，摘要不能代替审批。
+
+Context 可选择 knowledge_refs 和 control_command_ids。文档引用需要 chunk_id、hash、parse_hash，可指定历史 as_of；命令审批状态通过实际命令记录读取。文档被撤销、修订或失效时，恢复结果会标记不可用；文档工具缓存随内容、权限和有效版本变化而失效。
+
+研究助手增加 search_documents 和 read_document。当前模式由模型选择查询、本机插入文档原文，提供商只得到引用和本地事实名称。会话中保存引用模板，查看回答时再检查文档权限；删除文档后不会继续展示旧正文。需要模型读取已核准片段并综合推理的 RAG、真实领域问答评价和后续适配仍在后续工作范围内。

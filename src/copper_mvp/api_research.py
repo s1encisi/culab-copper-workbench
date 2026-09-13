@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from typing import Literal
+from typing import Literal, Annotated
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
@@ -12,6 +12,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr
 from copper_mvp.access import PROJECT
 from copper_mvp.common import WorkbenchError
 from copper_mvp.research_store import TERMINAL
+from copper_mvp.research_memory import KnowledgeReference, MemoryCapture
 
 
 class Context(BaseModel):
@@ -21,6 +22,8 @@ class Context(BaseModel):
     optimizer_comparison_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     event_id: str | None = Field(default=None, max_length=180)
     as_of: AwareDatetime | None = None
+    knowledge_refs: list[KnowledgeReference] = Field(default_factory=list, max_length=20)
+    control_command_ids: list[Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]] = Field(default_factory=list, max_length=20)
 
 
 class NewSession(BaseModel):
@@ -108,7 +111,21 @@ def research_router():
 
     @router.get("/api/v2/sessions/{session_id}")
     def session(request: Request, session_id: str):
-        return wb(request).research.store.session(actor(request), session_id)
+        return wb(request).research.present_session(actor(request), session_id)
+
+    @router.post("/api/v2/sessions/{session_id}/memory")
+    def capture_memory(request: Request, session_id: str, payload: MemoryCapture):
+        service = wb(request).research
+        return service.memory.capture(actor(request), session_id, payload.ttl_hours, service.source_version())
+
+    @router.get("/api/v2/sessions/{session_id}/memory")
+    def memory(request: Request, session_id: str):
+        service = wb(request).research
+        return service.memory.restore(actor(request), session_id, service.source_version())
+
+    @router.delete("/api/v2/sessions/{session_id}/memory")
+    def forget_memory(request: Request, session_id: str):
+        return wb(request).research.memory.forget(actor(request), session_id)
 
     @router.post("/api/v2/sessions/{session_id}/messages", status_code=202)
     def message(request: Request, session_id: str, payload: Message):
@@ -117,7 +134,7 @@ def research_router():
 
     @router.get("/api/v2/tasks/{task_id}")
     def task(request: Request, task_id: str):
-        return wb(request).research.store.task(actor(request), task_id)
+        return wb(request).research.present_task(actor(request), task_id)
 
     @router.post("/api/v2/tasks/{task_id}/{action}")
     def control(request: Request, task_id: str, action: Literal["pause", "resume", "cancel"], payload: Control):

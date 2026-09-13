@@ -26,6 +26,11 @@ class Arguments(BaseModel):
     purpose: str = Field(min_length=1, max_length=200)
 
 
+class KnowledgeSearchArguments(Arguments):
+    query: str = Field(min_length=1, max_length=2000)
+    as_of: AwareDatetime | None = None
+
+
 class ReferenceArguments(Arguments):
     reference: str = Field(default="selected", min_length=1, max_length=48)
 
@@ -40,6 +45,8 @@ class ProbeArguments(ReferenceArguments):
 
 
 TOOLS = {
+    "search_documents": (KnowledgeSearchArguments, "在当前权限和时间范围内检索本地文档，返回引用及可本机展示的原文占位符。"),
+    "read_document": (ReferenceArguments, "回读一个文档引用；正文由本机展示，不发送到模型提供商。"),
     "project_status": (Arguments, "读取工作台当前能力、方法目录和可用数据范围。"),
     "list_model_comparisons": (Arguments, "列出最近的模型比较，返回可继续查询的匿名引用。"),
     "model_metrics": (MetricArguments, "在指定截止时间，用共同成熟事件重新计算模型误差。"),
@@ -222,6 +229,51 @@ class ResearchTools:
     def probe_resolution(self, reference="selected"):
         return self.diagnostic(reference).compare_probe_resolution()
 
+    def search_documents(self, query, as_of=None):
+        bound = source_time(self.context["as_of"]) if self.context.get("as_of") else None
+        cutoff = source_time(as_of) if as_of else bound
+        if bound and cutoff > bound:
+            raise WorkbenchError("文档查询超出任务截止时间", "AS_OF_SCOPE")
+        result = self.wb.knowledge.search(self.principal, query, cutoff)
+        items, facts = [], {}
+        for i, item in enumerate(result["items"], 1):
+            citation = {key: item["citation"][key] for key in
+                        ("doc_id", "version", "chunk_id", "hash", "parse_hash", "as_of")}
+            citation["scope_as_of"] = cutoff.isoformat() if cutoff else None
+            alias = self.register("K", citation["chunk_id"])
+            self.references[alias]["citation"] = citation
+            name = "document_excerpt_" + str(i)
+            facts[name] = {"kind": "document_reference", "citation": citation}
+            items.append({"reference": alias, "kind": item["kind"], "local_fact_name": name})
+        return {"summary": {"items": items, "local_fact_names": list(facts),
+                            "source_text_location": "local_only", "query_scope": "project_acl_and_effective_time"},
+                "local_facts": facts}
+
+    def read_document(self, reference="selected"):
+        if reference == "selected":
+            selected = self.context.get("knowledge_refs", [])
+            if len(selected) != 1:
+                raise WorkbenchError("请选择一个文档引用，或先检索取得引用", "CONTEXT_REQUIRED")
+            citation = selected[0]
+        else:
+            item = self.references.get(reference)
+            if not item or item["kind"] != "K":
+                raise WorkbenchError("没有该文档引用，请先检索", "RESOURCE_NOT_FOUND")
+            citation = item["citation"]
+        bound = source_time(self.context["as_of"]) if self.context.get("as_of") else None
+        scope = citation.get("scope_as_of", citation.get("as_of"))
+        cutoff = source_time(scope) if scope else bound
+        if bound and cutoff > bound:
+            raise WorkbenchError("文档引用超出任务截止时间", "AS_OF_SCOPE")
+        resolved = self.wb.knowledge.resolve(self.principal, citation["chunk_id"], cutoff)
+        actual = resolved["citation"]
+        if actual["hash"] != citation["hash"] or actual["parse_hash"] != citation["parse_hash"]:
+            raise WorkbenchError("文档引用内容已改变，请重新检索", "SOURCE_CHANGED")
+        clean = {key: actual[key] for key in ("doc_id", "version", "chunk_id", "hash", "parse_hash", "as_of")}
+        clean["scope_as_of"] = cutoff.isoformat() if cutoff else None
+        return {"summary": {"local_fact_names": ["document_excerpt"], "source_text_location": "local_only"},
+                "local_facts": {"document_excerpt": {"kind": "document_reference", "citation": clean}}}
+
     def event_context(self, reference="selected"):
         identifier = self.resolve(reference, "E")
         context = self.wb.data.context(identifier)
@@ -241,12 +293,14 @@ def public_evidence(evidence):
             "data": payload["summary"], "local_fact_names": list(payload.get("local_facts", {}))}
 
 
-def render_answer(template, evidence):
+def render_answer(template, evidence, document_resolver=None):
     lookup = {e["evidence_id"]: e["data"].get("local_facts", {}) for e in evidence}
     def replace(match):
         identifier, field = match.groups()
         fact = lookup.get(identifier, {}).get(field)
         if fact is None:
             raise WorkbenchError("回答引用了不存在的本地数值", "ANSWER_FACT_REFERENCE")
+        if fact.get("kind") == "document_reference":
+            return document_resolver(fact["citation"]) if document_resolver else match.group(0)
         return "缺测" if fact["value"] is None else f"{fact['value']:.6g} {fact['unit']}"
-    return re.sub(r"\{\{(E-[a-f0-9]+)\.([A-Za-z_]+)\}\}", replace, template)
+    return re.sub(r"\{\{(E-[a-f0-9]+)\.([A-Za-z_][A-Za-z0-9_]*)\}\}", replace, template)
