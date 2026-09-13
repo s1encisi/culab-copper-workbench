@@ -264,7 +264,16 @@ class ArtifactSources:
                 start=time.perf_counter();value,evidence=self.predict(descriptor,event)
                 elapsed=(time.perf_counter()-start)*1000;timings.append(evidence.get("model_elapsed_ms",elapsed))
                 expected=float(forecasts.loc[event,descriptor["target"]])
-                valid=np.isfinite(value) and np.isclose(value,expected,rtol=1e-10,atol=1e-9)
+                from copper_mvp.neural_replay import NEURAL_METHODS,neural_replay_error
+                if descriptor["method_id"] in NEURAL_METHODS:
+                    model=self.cache[evidence["artifact_sha256"]]
+                    target_index=("cu","as").index(descriptor["target"])
+                    origin=float(self.data.X.loc[event].iloc[target_index])
+                    scale=model.fit_metadata["target_delta_scale"][target_index]
+                    valid,numerical=neural_replay_error(value,expected,origin,scale)
+                    evidence["numerical_replay"]=numerical
+                else:
+                    valid=np.isfinite(value) and np.isclose(value,expected,rtol=1e-10,atol=1e-9)
                 rows.append({"event_id":event,"fold_id":fold,"value":value,"expected":expected,"parity":bool(valid),"elapsed_ms":elapsed,**evidence})
         self.verify(descriptor)
         return {"scope":"historical_runtime_shadow","independent_new_labels":False,"samples":len(rows),
