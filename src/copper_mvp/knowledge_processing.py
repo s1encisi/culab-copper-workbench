@@ -6,6 +6,8 @@ import json
 
 from copper_mvp.common import WorkbenchError, digest, dumps, utc_now
 from copper_mvp.knowledge_ocr import LocalOCR, render_page
+from copper_mvp.knowledge_parsing import parse_document
+from copper_mvp.knowledge_embedding import load_dependencies
 
 
 class DocumentProcessing:
@@ -70,6 +72,17 @@ class DocumentProcessing:
         if digest(parsed) != expected:
             raise WorkbenchError("解析版本已变更，请重新读取后审核", "VERSION_CONFLICT")
         return row, parsed
+
+    def reparse(self, actor, doc_id, version, expected_parse_hash):
+        with self.store.lock, self.store.connection() as c:
+            row, _ = self._editable(c, actor, doc_id, version, expected_parse_hash)
+            load_dependencies()
+            parsed = parse_document(bytes(row["content"]), json.loads(row["metadata_json"])["format"])
+            self.archive(c, actor.user_id, doc_id, version, parsed, "reparse_original")
+            c.execute("UPDATE document_versions SET parsed_json=?,status='needs_review',review_json=NULL WHERE doc_id=? AND version=?",
+                      (dumps(parsed), doc_id, version))
+            self.store._audit(c, actor, doc_id, "reparse_original")
+            return self.store._describe(self.store._version(c, doc_id, version))
 
     def run_ocr(self, actor, doc_id, version, expected_parse_hash, pages=None, dpi=180):
         with self.store.lock, self.store.connection() as c:

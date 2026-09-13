@@ -4,7 +4,7 @@ from pydantic import AwareDatetime
 from starlette.concurrency import run_in_threadpool
 
 from copper_mvp.common import WorkbenchError
-from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess, DocumentReview, KnowledgeQuery, OCRRequest, DocumentCorrections
+from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess, DocumentReview, KnowledgeQuery, OCRRequest, DocumentCorrections, ReparseRequest
 from copper_mvp.knowledge_parsing import MAX_BYTES
 from copper_mvp.research_documents import DisclosureConsent
 
@@ -48,6 +48,11 @@ def knowledge_router():
     def review(request: Request, doc_id: str, version: int, payload: DocumentReview):
         store, actor = service(request)
         return store.review(actor, doc_id, version, payload.accepted, payload.note, payload.expected_parse_hash)
+
+    @router.post("/documents/{doc_id}/versions/{version}/reparse")
+    def reparse(request: Request, doc_id: str, version: int, payload: ReparseRequest):
+        store, actor = service(request)
+        return store.processing.reparse(actor, doc_id, version, payload.expected_parse_hash)
 
     @router.post("/documents/{doc_id}/versions/{version}/ocr")
     def ocr(request: Request, doc_id: str, version: int, payload: OCRRequest):

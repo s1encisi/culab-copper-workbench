@@ -7,7 +7,7 @@ import zipfile
 
 from copper_mvp.common import WorkbenchError
 
-PARSER_VERSION = "g6m.structured.v1"
+PARSER_VERSION = "g6m.structured.v3"
 TOKEN = re.compile(r"[\u3400-\u9fff]|[A-Za-z0-9_]+|[^\s]")
 MAX_BYTES = 16 * 1024 * 1024
 
@@ -67,11 +67,18 @@ def markdown_blocks(payload):
                 i += 1
                 if closed:
                     break
+        elif re.match(r"^\s*(?:[-*+]|\d+[.)])\s+", lines[i]):
+            kind = "list_item"
+            i += 1
+            while i < len(lines) and lines[i].strip():
+                if re.match(r"^\s*(?:[-*+]|\d+[.)])\s+|^#{1,6}\s|^\$\$", lines[i]):
+                    break
+                i += 1
         else:
             kind = "image" if re.search(r"!\[[^\]]*\]\([^)]+\)", lines[i]) else "paragraph"
             i += 1
             while i < len(lines) and lines[i].strip():
-                if re.match(r"^(#{1,6})\s|^\$\$|^!\[", lines[i]):
+                if re.match(r"^(#{1,6})\s|^\$\$|^!\[|^\s*(?:[-*+]|\d+[.)])\s+", lines[i]):
                     break
                 if i + 1 < len(lines) and "|" in lines[i] and re.fullmatch(r"[\s|:\-]+", lines[i + 1]):
                     break

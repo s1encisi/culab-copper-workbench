@@ -50,6 +50,7 @@ class KnowledgeQuery(BaseModel):
     as_of: AwareDatetime | None = None
     limit: int = Field(default=5, ge=1, le=20)
     context_tokens: int = Field(default=6000, ge=100, le=6000)
+    rerank: bool = False
 
 
 class OCRRequest(BaseModel):
@@ -83,3 +84,8 @@ class DocumentCorrections(BaseModel):
     expected_parse_hash: str = Field(pattern=r"^[a-f0-9]{64}$")
     corrections: list[BlockCorrection] = Field(min_length=1, max_length=100)
     note: str = Field(min_length=1, max_length=1000)
+
+
+class ReparseRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    expected_parse_hash: str = Field(pattern=r"^[a-f0-9]{64}$")

@@ -178,3 +178,13 @@ Context 可选择 knowledge_refs 和 control_command_ids。文档引用需要 ch
 撤销正文授权使用 /api/v2/knowledge/documents/{doc_id}/disclosures/{consent_id}/revoke。撤销、文档删除或读者权限移除会清理相关账号的派生回答和待提交结果，并保留不含正文的审计记录；服务启动时也会检查离线期间失效的来源。历史文档回答通过本轮工具重新取证，正文不会直接从旧对话拼接进下一次模型请求。
 
 受控 RAG 的管线验证使用合成文档与 MockTransport，覆盖准确版本授权、过期、调用中撤销、账号隔离、重启清理、文档指令隔离及片段级引用。该验证不代表真实模型的领域回答质量已经通过验收。
+
+## G6m 可选本地重排与条款解析
+
+版本 0.24.4 支持本地多语言交叉编码器重排。默认使用 BM25、向量检索及倒数排名融合；POST /api/v2/knowledge/search 可显式设置 rerank=true，研究工具 search_documents 也提供该选项。权限和生效时间先筛选候选，重排只处理已获访问权限的内容。
+
+[官方 mMARCO MiniLM 交叉编码器](https://huggingface.co/cross-encoder/mmarco-mMiniLMv2-L12-H384-v1) 的固定版本、权重和 tokenizer 哈希保存在 configs/runtime/knowledge_reranker.json。scripts/setup_knowledge.py 可安装本地资产，并支持中断续传。重排分数是相关性排序值；响应另记录候选数量、输入截断数量、模型签名及耗时。
+
+现有项目文档上的预设查询对照显示：该通用模型提高了首位条款命中率，但前五条覆盖率和延迟未改善，因此保留为可选模式。该小规模工程查询集不能代替独立领域评价。
+
+Markdown 列表现在按单条规则保留位置。已有文档可通过 /api/v2/knowledge/documents/{doc_id}/versions/{version}/reparse 重新解析，请求携带 expected_parse_hash。重新解析会保留原文件、历史解析和原活动索引，审核并重建后再切换；旧正文授权不会自动转到新的解析哈希。

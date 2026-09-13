@@ -29,6 +29,7 @@ class Arguments(BaseModel):
 class KnowledgeSearchArguments(Arguments):
     query: str = Field(min_length=1, max_length=2000)
     as_of: AwareDatetime | None = None
+    rerank: bool = Field(default=False, description="可选本地交叉编码器重排，耗时更高。")
 
 
 class ReferenceArguments(Arguments):
@@ -229,12 +230,12 @@ class ResearchTools:
     def probe_resolution(self, reference="selected"):
         return self.diagnostic(reference).compare_probe_resolution()
 
-    def search_documents(self, query, as_of=None):
+    def search_documents(self, query, as_of=None, rerank=False):
         bound = source_time(self.context["as_of"]) if self.context.get("as_of") else None
         cutoff = source_time(as_of) if as_of else bound
         if bound and cutoff > bound:
             raise WorkbenchError("文档查询超出任务截止时间", "AS_OF_SCOPE")
-        result = self.wb.knowledge.search(self.principal, query, cutoff)
+        result = self.wb.knowledge.search(self.principal, query, cutoff, rerank=rerank)
         items, facts = [], {}
         for i, item in enumerate(result["items"], 1):
             citation = {key: item["citation"][key] for key in

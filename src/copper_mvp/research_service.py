@@ -99,7 +99,7 @@ class ResearchService:
         sources = source_signature(self.wb.data)
         return digest({"app_version": APP_VERSION, "dataset": self.wb.data.dataset_version, "sources": sources,
                        "tools": tool_definitions(), "settings": self.settings.model_dump(), "prompt": PROMPT,
-                       "implementations": {name: file_hash(Path(__file__).with_name(name)) for name in ("research_tools.py", "research_memory.py", "research_documents.py", "knowledge_store.py", "model_registry.py", "optimizer_registry.py")}})
+                       "implementations": {name: file_hash(Path(__file__).with_name(name)) for name in ("research_tools.py", "research_memory.py", "research_documents.py", "knowledge_store.py", "knowledge_reranker.py", "model_registry.py", "optimizer_registry.py")}})
 
     def submit(self, principal, session_id, question, request_key, context=None, max_cost_cny=None):
         principal.require("compute")

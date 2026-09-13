@@ -45,13 +45,14 @@ def timestamp(value=None):
 
 
 class KnowledgeStore:
-    def __init__(self, root, embedder=None):
+    def __init__(self, root, embedder=None, reranker=None):
         self.root = Path(root) / "knowledge"
         self.root.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root / "knowledge.sqlite"
         self.lock = threading.RLock()
         self.change_listeners = []
         self.embedder = embedder or LocalEmbedding()
+        self.reranker = reranker
         self.processing = DocumentProcessing(self)
         with self.connection() as c:
             c.executescript("""
@@ -304,10 +305,10 @@ class KnowledgeStore:
         with self.lock, self.connection() as c:
             visible = self._visible(c, actor, timestamp(as_of))
             revision = c.execute("SELECT COALESCE(MAX(id),0) FROM knowledge_audit").fetchone()[0]
-            return digest({"revision": revision,
+            return digest({"revision": revision, "reranker": self.reranker.cache_key if self.reranker else None,
                            "visible": sorted((row["doc_id"], row["version"], row["index_id"]) for row in visible.values())})
 
-    def search(self, actor, query, as_of=None, limit=5, context_tokens=6000):
+    def search(self, actor, query, as_of=None, limit=5, context_tokens=6000, rerank=False):
         bound = timestamp(as_of)
         with self.lock, self.connection() as c:
             visible = self._visible(c, actor, bound)
@@ -339,19 +340,29 @@ class KnowledgeStore:
             for channel in (lexical, dense):
                 for rank, index in enumerate(channel, 1):
                     fused[index] += 1 / (60 + rank)
+            ordered = sorted(fused.items(), key=lambda pair: (-pair[1], pair[0]))
+            reranker_result, reranker_scores = None, {}
+            if self.reranker is not None and rerank:
+                candidate_ids = [index for index, _ in ordered]
+                reranker_result = self.reranker.rank(query, [chunks[index]["text"] for index in candidate_ids])
+                reranker_scores = dict(zip(candidate_ids, reranker_result["scores"]))
+                ordered.sort(key=lambda pair: (-reranker_scores[pair[0]], -pair[1], pair[0]))
             items, used = [], 0
-            for index, score in sorted(fused.items(), key=lambda pair: (-pair[1], pair[0])):
+            for index, score in ordered:
                 item, row = chunks[index], versions[index]
                 if used + item["tokens"] > context_tokens:
                     continue
                 items.append({"text": item["text"], "kind": item["kind"], "score": score,
                               "bm25": float(scores[index]), "cosine": float(semantic[index]),
+                              "rerank_score": reranker_scores.get(index),
                               "citation": self.citation(item, row, bound), "authority": "evidence_only"})
                 used += item["tokens"]
                 if len(items) >= limit:
                     break
             return {"items": items, "as_of": bound, "context_tokens": used, "index_version": INDEX_VERSION,
-                    "reranking": "reciprocal_rank_fusion_k60", "embedding_signature": self.embedder.signature,
+                    "reranking": "local_cross_encoder" if reranker_result else "reciprocal_rank_fusion_k60",
+                    "reranker": {k: v for k, v in reranker_result.items() if k != "scores"} if reranker_result else None,
+                    "embedding_signature": self.embedder.signature,
                     "local_only": True}
 
     def resolve(self, actor, chunk_id, as_of=None):

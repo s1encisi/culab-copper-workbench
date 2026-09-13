@@ -268,3 +268,53 @@ def test_long_table_row_groups_retain_headers_units_and_footnotes():
         observed.extend(line.split(" | ")[0] for line in lines)
         assert chunk["span"] is None and chunk["location"]["table_row_start"] <= chunk["location"]["table_row_end"]
     assert observed == [row[0] for row in rows]
+
+
+def test_reranker_only_receives_authorized_candidates_and_baseline_remains_available(tmp_path):
+    class RankingProbe:
+        cache_key = "synthetic-ranking-probe"
+        def __init__(self):
+            self.received = []
+        def rank(self, query, passages):
+            self.received.append(list(passages))
+            return {"scores": list(range(len(passages))), "pairs": len(passages),
+                    "truncated_pairs": 0, "model_signature": self.cache_key}
+    ranker = RankingProbe()
+    store = KnowledgeStore(tmp_path, LifecycleEmbedding(), reranker=ranker)
+    add(store, text="第一条允许访问的说明。\n\n第二条允许访问的说明。")
+    add(store, spec("private", readers=[]), "SYNTHETIC-NOT-ALLOWED-TO-RERANK")
+    ranked = store.search(READER, "允许访问", rerank=True)
+    assert ranked["reranking"] == "local_cross_encoder"
+    assert ranked["items"][0]["text"] == ranker.received[-1][-1]
+    assert "SYNTHETIC-NOT-ALLOWED-TO-RERANK" not in str(ranker.received)
+    count = len(ranker.received)
+    baseline = store.search(READER, "允许访问", rerank=False)
+    assert len(ranker.received) == count
+    assert baseline["reranking"] == "reciprocal_rank_fusion_k60"
+
+
+def test_markdown_lists_keep_individual_clause_locations():
+    text = "# 规则\n\n- 第一条：保留单位。\n- 第二条：重启后查询原命令账本。\n  不能直接重放发送。\n\n1. 检查版本。\n2. 检查权限。\n"
+    parsed = parse_document(text.encode(), "md")
+    items = [v for v in parsed["blocks"] if v["kind"] == "list_item"]
+    assert len(items) == 4
+    assert "不能直接重放发送" in items[1]["text"]
+    assert items[1]["location"]["line_start"] == 4 and items[1]["location"]["line_end"] == 5
+    for item in items:
+        loc = item["location"]
+        assert text[loc["char_start"]:loc["char_end"]].strip() == item["text"]
+
+
+def test_reparse_requires_review_and_keeps_old_active_index(tmp_path):
+    store = KnowledgeStore(tmp_path, LifecycleEmbedding())
+    add(store, text="- 第一条。\n- 第二条。")
+    before = store.inspect(OWNER, "procedure", 1)
+    original = store.search(READER, "第一条")["items"][0]
+    reparsed = store.processing.reparse(OWNER, "procedure", 1, before["parse_hash"])
+    assert reparsed["status"] == "needs_review"
+    assert store.resolve(READER, original["citation"]["chunk_id"])["text"] == original["text"]
+    with pytest.raises(WorkbenchError):
+        store.build_index(OWNER, "procedure", 1)
+    store.review(OWNER, "procedure", 1, True, "checked reparse", reparsed["parse_hash"])
+    store.build_index(OWNER, "procedure", 1)
+    assert len(store.processing.history(OWNER, "procedure", 1)) == 2
