@@ -14,7 +14,7 @@ class StrictModel(BaseModel):
 
 class ArtifactRequest(StrictModel):
     request_key:str=Field(min_length=1,max_length=100,pattern=r"^[A-Za-z0-9_.:-]+$")
-    source_kind:Literal["model_comparison","ensemble_study"]
+    source_kind:Literal["model_comparison","ensemble_study","calibration_study"]
     source_id:str=Field(pattern=r"^[a-f0-9]{32}$")
     method_id:str=Field(min_length=1,max_length=80)
     target:Literal["cu","as"]

@@ -34,10 +34,20 @@ class ArtifactSources:
         self.dynamic_cache={}
 
     def source_root(self,kind,identifier):
+        if kind=="calibration_study":
+            if len(identifier)!=32 or any(c not in "0123456789abcdef" for c in identifier):
+                raise WorkbenchError("校准研究不存在","CALIBRATION_NOT_FOUND")
+            root=self.root/"calibration_studies"/identifier
+            if not (root/"state.json").is_file():
+                raise WorkbenchError("校准研究不存在","CALIBRATION_NOT_FOUND")
+            return root
         service=self.models if kind=="model_comparison" else self.ensembles
         return service.directory(identifier)
 
     def load(self,actor,request):
+        if request.source_kind=="calibration_study":
+            from copper_mvp.calibration_release_source import load_calibrated_source
+            return load_calibrated_source(self,actor,request)
         method,target=request.method_id,request.target
         root=self.source_root(request.source_kind,request.source_id)
         if request.source_kind=="model_comparison":
@@ -165,6 +175,8 @@ class ArtifactSources:
         for artifact in descriptor["artifacts"]:
             if file_hash(safe_artifact_path(root,artifact["path"]))!=artifact["sha256"]:
                 raise WorkbenchError("模型文件已变化","MODEL_HASH_MISMATCH")
+            if artifact.get("calibrator_path") and file_hash(safe_artifact_path(root,artifact["calibrator_path"]))!=artifact["calibrator_sha256"]:
+                raise WorkbenchError("校准器文件已变化","MODEL_HASH_MISMATCH")
         if descriptor["method_id"] in ("CatBoost", "NGBoost", "EBM", "Cubist"):
             from copper_mvp.specialized_models import specialized_dependencies
             specialized_dependencies()
@@ -198,6 +210,9 @@ class ArtifactSources:
         return rows.set_index("event_id")
 
     def predict(self,descriptor,event):
+        if descriptor["source_kind"]=="calibration_study":
+            from copper_mvp.calibration_release_source import predict_calibrated_source
+            return predict_calibrated_source(self,descriptor,event)
         fold=self.data.fold_for.get(event)
         entry=next((a for a in descriptor["artifacts"] if a["fold_id"]==fold),None)
         if entry is None:

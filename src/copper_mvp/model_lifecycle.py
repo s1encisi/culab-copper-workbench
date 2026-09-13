@@ -435,6 +435,9 @@ class ModelLifecycle:
                         raise WorkbenchError("模型输出无效，使用参考模型","MODEL_OUTPUT_VALUES")
                     result.update(value=value,model=descriptor["method_id"],artifact_id=candidate["id"],
                                   release_id=pointer["release_id"],model_evidence=evidence)
+                    if evidence.get("prediction_intervals"):
+                        result["intervals"]=evidence["prediction_intervals"]
+                        result["calibration"]=evidence["calibration"]
                 except WorkbenchError as exc:
                     result["fallback_reason"]=exc.code
                     warnings.append({"target":target,"code":exc.code,"message":str(exc)})
@@ -444,6 +447,8 @@ class ModelLifecycle:
                                       (pointer["candidate_id"],))
                             self.event(c,pointer["candidate_id"],"runtime_verifier","quarantined",{"reason":exc.code})
             predictions[target]=result
+        candidate_regions=[predictions[target].get("model_evidence",{}).get("joint_prediction_region") for target in ("cu","as")]
+        joint_region=candidate_regions[0] if all(candidate_regions) and candidate_regions[0]["id"]==candidate_regions[1]["id"] else None
         identifier=uuid.uuid4().hex
         result={"schema_version":"release-prediction.g5c.v1","id":identifier,"project_id":actor.project_id,"task_id":TASK_ID,
                 "trace_id":uuid.uuid4().hex,"created_by":actor.user_id,"source_kind":"registered-model-research","created_at":self.now(),
@@ -451,7 +456,7 @@ class ModelLifecycle:
                 "computed_at":self.now(),"selection":request.selection,
                 "evaluation_mode":"historical_replay","online_prediction_claim":False,
                 "selection_timing_note":"Current research uses today's approved pointer; as_of_event uses only approvals already effective at the event time.",
-                "pointer_snapshot":pointers,"predictions":predictions,"warnings":warnings}
+                "pointer_snapshot":pointers,"predictions":predictions,"joint_prediction_region":joint_region,"warnings":warnings}
         result["content_hash"]=digest(result)
         with self.connection() as c:
             c.execute("BEGIN IMMEDIATE")

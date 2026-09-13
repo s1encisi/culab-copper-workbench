@@ -206,3 +206,42 @@ def test_prediction_integrity_is_checked_on_read_and_idempotent_reuse(system):
         service.prediction(owner,output["id"])
     with pytest.raises(WorkbenchError,match="哈希"):
         service.forecast(owner,{"request_key":"integrity","event_id":"event"})
+
+
+def test_calibration_intervals_are_retained_in_immutable_prediction_records(system):
+    service,owner,source,clock=system
+    original=source.predict
+    def calibrated(descriptor,event):
+        value,evidence=original(descriptor,event)
+        return value,{**evidence,
+            "prediction_intervals":{"marginal_c90":{"lower":10.,"upper":12.,"unit":"g/L","joint_region":False}},
+            "calibration":{"schema_version":"synthetic-calibration","nominal_coverage":.9,"unconditional_guarantee":False}}
+    source.predict=calibrated
+    artifact,shadow=ready(service,owner,key="calibrated")
+    release=proposal(service,owner,artifact,shadow,key="calibrated-release")
+    approve(service,owner,release)
+    result=service.forecast(owner,{"request_key":"calibrated-prediction","event_id":"event"})
+    assert result["predictions"]["cu"]["intervals"]["marginal_c90"]["lower"]==10.
+    assert result["predictions"]["cu"]["calibration"]["nominal_coverage"]==.9
+    assert service.prediction(owner,result["id"])["predictions"]["cu"]["intervals"]==result["predictions"]["cu"]["intervals"]
+
+
+@pytest.mark.parametrize("shared_calibrator",[True,False])
+def test_target_pointers_only_form_joint_region_when_calibration_group_matches(system,shared_calibrator):
+    service,owner,source,clock=system
+    original=source.predict
+    def calibrated(descriptor,event):
+        value,evidence=original(descriptor,event)
+        group="same-group" if shared_calibrator else descriptor["target"]
+        return value,{**evidence,"joint_prediction_region":{"id":group,"nominal_coverage":.9,
+             "bounds":{"cu":{"lower":10,"upper":12,"unit":"g/L"},"as":{"lower":1000,"upper":1200,"unit":"mg/L"}}}}
+    source.predict=calibrated
+    for target in ("cu","as"):
+        artifact=service.register(owner,{"request_key":"joint-"+target,"source_kind":"model_comparison",
+            "source_id":"a"*32,"method_id":"SyntheticLinear","target":target})
+        shadow=service.start_shadow(owner,artifact["id"],{"request_key":"joint-shadow-"+target})
+        release=service.propose(owner,{"request_key":"joint-release-"+target,"candidate_id":artifact["id"],
+            "shadow_id":shadow["id"],"target":target,"expected_version":0,"reason":"synthetic"})
+        approve(service,owner,release)
+    result=service.forecast(owner,{"request_key":"joint-record","event_id":"event"})
+    assert (result["joint_prediction_region"] is not None)==shared_calibrator
