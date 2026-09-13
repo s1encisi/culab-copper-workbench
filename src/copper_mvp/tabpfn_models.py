@@ -54,6 +54,9 @@ class TabPFNModel:
     def _predict(self,X):
         X=np.asarray(X,float)
         inputs=np.ascontiguousarray(self.preprocessor.transform(X),dtype=np.float64)
+        query_key=hashlib.sha256(X.tobytes()+self.context_id.encode()).hexdigest()
+        if getattr(self,"_last_query_key",None)==query_key:
+            return self._last_result[0].copy(),self._last_result[1].copy()
         root=self._directory();identifier=uuid.uuid4().hex
         query=root/(identifier+"_input.npz");result=root/(identifier+"_output.npz")
         np.savez(query,X=inputs)
@@ -64,9 +67,17 @@ class TabPFNModel:
         assert file_hash(result)==response["sha256"]
         with np.load(result,allow_pickle=False) as output:
             mean=output["mean"].copy();quantiles=output["quantiles"].copy()
-        return X[:,:2]+self.target_scaler.inverse_transform(mean),(
-            X[:,:2,None].transpose(0,2,1)+self.target_scaler.mean_[None,None,:]
+        values=X[:,:2]+self.target_scaler.inverse_transform(mean)
+        intervals=(X[:,:2,None].transpose(0,2,1)+self.target_scaler.mean_[None,None,:]
             +quantiles*self.target_scaler.scale_[None,None,:])
+        self._last_query_key=query_key
+        self._last_result=(values,intervals)
+        return values.copy(),intervals.copy()
+
+    def __getstate__(self):
+        state=self.__dict__.copy()
+        state.pop("_last_query_key",None);state.pop("_last_result",None)
+        return state
 
     def predict(self,X):
         return self._predict(X)[0]

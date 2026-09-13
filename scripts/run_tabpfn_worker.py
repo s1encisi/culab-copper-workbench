@@ -11,6 +11,8 @@ with contextlib.redirect_stdout(sys.stderr):
     import numpy as np
     import torch
     from tabpfn import TabPFNRegressor
+    from copper_mvp.tabpfn_attention import enable_chunked_cpu_attention
+    enable_chunked_cpu_attention()
 torch.set_num_threads(1)
 cache_id=None
 models=[]

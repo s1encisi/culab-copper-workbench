@@ -1,12 +1,12 @@
 """Fixed local TabPFN-v2 context model with isolated runtime requirements."""
 from copper_mvp.common import PROJECT_ROOT,digest,file_hash
 TABPFN_METHODS=("TabPFN",)
-TABPFN_VERSION="g6l.tabpfn.v1"
+TABPFN_VERSION="g6l.tabpfn.v2"
 TABPFN_PARAMETERS={"components":8,"n_estimators":2,"fit_mode":"fit_with_cache",
                    "memory_saving_mode":True,"maximum_context_rows":10000,"seed_policy":"fixed"}
 WEIGHT_SHA256="2ab5a07d5c41dfe6db9aa7ae106fc6de898326c2765be66505a07e2868c10736"
 TABPFN_FILES=tuple("src/copper_mvp/"+n for n in ("tabpfn_registry.py","tabpfn_runtime.py",
-    "tabpfn_models.py","tabpfn_client.py"))+("scripts/run_tabpfn_worker.py","requirements-tabpfn-isolated.txt",
+    "tabpfn_models.py","tabpfn_client.py","tabpfn_attention.py"))+("scripts/run_tabpfn_worker.py","requirements-tabpfn-isolated.txt",
     "configs/runtime/tabpfn_weights.json")
 
 
