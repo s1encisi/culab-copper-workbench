@@ -25,6 +25,7 @@ from copper_mvp.storage import RunStore
 from copper_mvp.research_store import ResearchStore
 from copper_mvp.knowledge_store import KnowledgeStore
 from copper_mvp.knowledge_reranker import LocalReranker
+from copper_mvp.calibration_service import CalibrationService
 from copper_mvp.access import AccessControl
 from copper_mvp.research_service import ResearchService
 from copper_mvp.control.client import MockClient
@@ -78,6 +79,7 @@ class Workbench:
         self.knowledge = KnowledgeStore(self.root, reranker=LocalReranker())
         self.research = ResearchService(self, self.access)
         self.control = CommandService(self.store, self.access, MockClient.from_env())
+        self.calibrations = CalibrationService(self.root, self.data)
 
     def close(self):
         self.control.close()

@@ -1,6 +1,8 @@
 """Native CatBoost, NGBoost, EBM and Cubist in the physical-unit interface."""
 from importlib import metadata
 import sys
+import os
+from pathlib import Path
 import warnings
 import numpy as np
 from sklearn.preprocessing import StandardScaler
@@ -11,7 +13,7 @@ from copper_mvp.specialized_registry import PACKAGES, PARAMETERS
 
 
 def specialized_dependencies():
-    target = PROJECT_ROOT / "runs" / "dependencies" / "specialized-models-v1"
+    target = Path(os.environ.get("COPPER_SPECIALIZED_RUNTIME_DIR", str(PROJECT_ROOT / "runs/dependencies/specialized-models-v1")))
     if target.is_dir() and str(target) not in sys.path:
         sys.path.insert(0, str(target))
     from copper_mvp.cubist_model import cubist_dependency

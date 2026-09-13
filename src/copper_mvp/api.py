@@ -27,6 +27,7 @@ from copper_mvp.api_releases import release_router
 from copper_mvp.api_portfolios import portfolio_router
 from copper_mvp.api_classical import classical_router
 from copper_mvp.api_knowledge import knowledge_router
+from copper_mvp.api_calibration import calibration_router
 from copper_mvp.access import Principal, PROJECT
 
 
@@ -58,6 +59,7 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
     app.include_router(portfolio_router())
     app.include_router(classical_router())
     app.include_router(knowledge_router())
+    app.include_router(calibration_router())
 
     def workbench(request: Request) -> Workbench:
         return request.app.state.workbench

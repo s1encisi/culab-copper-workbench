@@ -1,6 +1,8 @@
 """Cubist rule/linear models in physical two-target units."""
 from importlib import metadata
 import sys
+import os
+from pathlib import Path
 import re
 import warnings
 import numpy as np
@@ -11,7 +13,7 @@ from copper_mvp.classical_models import classical_preprocess
 
 
 def cubist_dependency():
-    target = PROJECT_ROOT/"runs/dependencies/cubist-1.2.2"
+    target = Path(os.environ.get("COPPER_CUBIST_RUNTIME_DIR", str(PROJECT_ROOT/"runs/dependencies/cubist-1.2.2")))
     if str(target) not in sys.path and target.is_dir():
         sys.path.insert(0, str(target))
     try:

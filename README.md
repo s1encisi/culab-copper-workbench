@@ -188,3 +188,17 @@ Context 可选择 knowledge_refs 和 control_command_ids。文档引用需要 ch
 现有项目文档上的预设查询对照显示：该通用模型提高了首位条款命中率，但前五条覆盖率和延迟未改善，因此保留为可选模式。该小规模工程查询集不能代替独立领域评价。
 
 Markdown 列表现在按单条规则保留位置。已有文档可通过 /api/v2/knowledge/documents/{doc_id}/versions/{version}/reparse 重新解析，请求携带 expected_parse_hash。重新解析会保留原文件、历史解析和原活动索引，审核并重建后再切换；旧正文授权不会自动转到新的解析哈希。
+
+## G6n 独立时序校准
+
+版本 0.25.0 为注册预测方法提供独立时序校准研究。每个既有外层训练窗口再分为基础拟合段和后续校准段；插补、缩放和模型参数只在基础拟合段拟合。训练标签需在基础拟合截止前已可获得，校准标签需在外层截止前成熟，外层验证标签由独立评价器读取。
+
+提供两种名义 90% 区间：每目标绝对残差校准，以及使用训练段目标变化量标准差归一化的最大残差联合区域。尺度为零时明确关闭联合区域。区间保持未裁剪实数边界，并记录负下界；两个边际 90% 区间不被当作联合 90%。时间相关和漂移使交换性条件不成立，界面与记录仅报告实测覆盖，不声明无条件保证。
+
+默认对照包含 Persistence、DeltaRidge、BayesianRidge、MultiTaskElasticNet、Quantile 和 NGBoost。固定确定性配置只保留一个真实种子运行；随机配置使用请求预先指定的种子。原生概率区间与 C90 使用同一个基础拟合模型，报告覆盖、宽度、WIS、可用时的 NLL/CRPS、按时间折结果和配对时间块区间。
+
+运行 scripts/run_calibration_study.py 可创建研究；scripts/verify_calibration_study.py 从保存的模型和校准器重新推理。结果均在 runs/ 下。API 位于 /api/v2/calibrations，可查询研究并以 /{id}/predict 回放已有外层验证事件；不会自动改变发布指针或获得控制资格。
+
+专用模型可通过 COPPER_SPECIALIZED_RUNTIME_DIR 和 COPPER_CUBIST_RUNTIME_DIR 指向经验证的本地依赖。基础模型和校准器分别保存，并记录数据段、标签版本、参数、源码及工件哈希。
+
+方法依据：[保形预测入门](https://arxiv.org/abs/2107.07511)；时间漂移下的保证边界及自适应方案背景见 [Adaptive Conformal Inference](https://arxiv.org/abs/2106.00170)。当前实现采用固定独立时序校准段，没有将自适应方法的理论保证套用到本实现。
