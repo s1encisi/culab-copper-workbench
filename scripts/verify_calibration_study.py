@@ -11,7 +11,7 @@ from copper_mvp.access import Principal
 from copper_mvp.api import create_app
 from copper_mvp.calibration import SplitC90
 from copper_mvp.calibration_evaluation import read_calibration_training
-from copper_mvp.calibration_service import CalibrationService
+from copper_mvp.calibration_service import CalibrationService,load_calibration_model
 from copper_mvp.common import file_hash,write_json
 from copper_mvp.data import DataRepository
 from copper_mvp.neural_replay import NEURAL_METHODS,neural_replay_error
@@ -35,7 +35,7 @@ def main():
             if entry["status"]!="completed" or entry["fold_id"]=="DEVELOPMENT":continue
             model_path=folder/entry["model_path"]
             assert file_hash(model_path)==entry["model_sha256"]
-            model=joblib.load(model_path)
+            model=load_calibration_model(model_path,entry["method_id"])
             part=rows[rows.fold_id.eq(entry["fold_id"])&rows.method_id.eq(entry["method_id"])&rows.seed.eq(entry["seed"])]
             events=part.event_id.tolist()
             expected=part[["cu","as"]].to_numpy(float)

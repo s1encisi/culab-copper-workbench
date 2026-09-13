@@ -19,6 +19,26 @@ from copper_mvp.model_registry import method_spec
 from copper_mvp.model_training import source_signature
 
 
+def load_calibration_model(path,method_id):
+    from copper_mvp.model_registry import SPECIALIZED_METHODS,STATISTICAL_METHODS,TABULAR_METHODS,TEMPORAL_METHODS
+    if method_id in SPECIALIZED_METHODS:
+        from copper_mvp.specialized_models import specialized_dependencies
+        specialized_dependencies()
+    elif method_id in STATISTICAL_METHODS:
+        from copper_mvp.statistical_runtime import statistical_dependencies
+        statistical_dependencies()
+    elif method_id in TABULAR_METHODS:
+        from copper_mvp.tabular_runtime import tabular_runtime
+        tabular_runtime()
+    elif method_id in TEMPORAL_METHODS:
+        from copper_mvp.neural_runtime import load_tensor_runtime
+        load_tensor_runtime()
+    elif method_id=="BART":
+        from copper_mvp.bart_trees import numeric_evaluator
+        numeric_evaluator()
+    return joblib.load(path)
+
+
 class CalibrationService:
     def __init__(self,root,data):
         self.root=Path(root)/"calibration_studies";self.root.mkdir(parents=True,exist_ok=True)
@@ -109,7 +129,7 @@ class CalibrationService:
                 raise WorkbenchError("校准工件完整性校验失败","CALIBRATION_HASH")
         if method_spec(method_id,seed)["content_hash"]!=artifact["model_spec_hash"]:
             raise WorkbenchError("模型定义或运行依赖版本已改变","SOURCE_CHANGED")
-        model=joblib.load(root/artifact["model_path"])
+        model=load_calibration_model(root/artifact["model_path"],method_id)
         calibrator=SplitC90.from_manifest(json.loads((root/artifact["calibrator_path"]).read_text(encoding="utf-8")))
         point=model.predict_context(self.data,[event_id])
         intervals=calibrator.intervals(point)
