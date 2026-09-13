@@ -77,7 +77,18 @@ def verify_inventory(run_root, study_id, output):
                 else:
                     predicted = model.predict(X)
                 expected = sample[["cu", "as"]].to_numpy(float)
-                np.testing.assert_allclose(predicted, expected, rtol=1e-10, atol=1e-9)
+                from copper_mvp.neural_replay import NEURAL_METHODS, neural_replay_error
+                if method in NEURAL_METHODS:
+                    all_events=part.event_id.tolist()
+                    full=(model.predict_context(data,all_events) if model.spec.get("input_kind")=="anchored_process_sequence"
+                          else model.predict(data.X.loc[all_events].to_numpy(float)))
+                    np.testing.assert_allclose(full,part[["cu","as"]].to_numpy(float),rtol=1e-10,atol=1e-9)
+                    passed,numerical=neural_replay_error(predicted,expected,X[:,:2],model.fit_metadata["target_delta_scale"])
+                    assert passed,(method,fold,numerical)
+                    evidence["float32_replay"]=numerical
+                    evidence["strict_full_batch_replay"]=True
+                else:
+                    np.testing.assert_allclose(predicted, expected, rtol=1e-10, atol=1e-9)
                 evidence.update(scope="held_out_oof_replay", replayed_events=len(events),
                                 maximum_absolute_difference=float(np.max(np.abs(predicted-expected))))
                 if method == "NGBoost":
