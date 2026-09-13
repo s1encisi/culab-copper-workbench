@@ -94,7 +94,7 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
                     except WorkbenchError:
                         return JSONResponse(status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号没有计算权限"}})
         response = await call_next(request)
-        if request.url.path.startswith("/api/v2/knowledge/"):
+        if request.url.path.startswith(("/api/v2/knowledge/", "/api/v2/tasks/", "/api/v2/sessions")):
             response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         return response

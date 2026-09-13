@@ -6,6 +6,7 @@ from starlette.concurrency import run_in_threadpool
 from copper_mvp.common import WorkbenchError
 from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess, DocumentReview, KnowledgeQuery, OCRRequest, DocumentCorrections
 from copper_mvp.knowledge_parsing import MAX_BYTES
+from copper_mvp.research_documents import DisclosureConsent
 
 
 def knowledge_router():
@@ -88,6 +89,21 @@ def knowledge_router():
     def access(request: Request, doc_id: str, payload: DocumentAccess):
         store, actor = service(request)
         return store.change_access(actor, doc_id, payload)
+
+    @router.post("/documents/{doc_id}/versions/{version}/disclosures", status_code=201)
+    def grant_disclosure(request: Request, doc_id: str, version: int, payload: DisclosureConsent):
+        _, actor = service(request)
+        return request.app.state.workbench.research.documents.grant(actor, doc_id, version, payload)
+
+    @router.get("/documents/{doc_id}/versions/{version}/disclosures")
+    def disclosures(request: Request, doc_id: str, version: int):
+        _, actor = service(request)
+        return {"items": request.app.state.workbench.research.documents.consents(actor, doc_id, version)}
+
+    @router.post("/documents/{doc_id}/disclosures/{consent_id}/revoke")
+    def revoke_disclosure(request: Request, doc_id: str, consent_id: str):
+        _, actor = service(request)
+        return request.app.state.workbench.research.documents.revoke(actor, doc_id, consent_id)
 
     @router.delete("/documents/{doc_id}")
     def delete(request: Request, doc_id: str):

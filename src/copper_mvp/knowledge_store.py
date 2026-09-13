@@ -50,6 +50,7 @@ class KnowledgeStore:
         self.root.mkdir(parents=True, exist_ok=True)
         self.db_path = self.root / "knowledge.sqlite"
         self.lock = threading.RLock()
+        self.change_listeners = []
         self.embedder = embedder or LocalEmbedding()
         self.processing = DocumentProcessing(self)
         with self.connection() as c:
@@ -247,12 +248,17 @@ class KnowledgeStore:
             return {"doc_id": doc_id, "version": version, "index_id": index_id,
                     "chunks": len(chunks), "embedding_signature": signature, "reused": False}
 
+    def notify_change(self, doc_id, kind):
+        for listener in tuple(self.change_listeners):
+            listener(doc_id, kind)
+
     def change_access(self, actor, doc_id, access: DocumentAccess):
         with self.lock, self.connection() as c:
             self._document(c, actor, doc_id, manage=True)
             c.execute("UPDATE documents SET acl_json=?,revoked=? WHERE doc_id=?",
                       (dumps(access.model_dump(exclude={"revoked"})), int(access.revoked), doc_id))
             self._audit(c, actor, doc_id, "revoke" if access.revoked else "access_change")
+        self.notify_change(doc_id, "access")
         return {"doc_id": doc_id, "revoked": access.revoked}
 
     def _visible(self, c, actor, as_of):
@@ -386,4 +392,5 @@ class KnowledgeStore:
                 self._audit(c, actor, doc_id, "delete_content_and_vectors")
             with self.connection() as c:
                 c.execute("VACUUM")
+        self.notify_change(doc_id, "delete")
         return {"doc_id": doc_id, "deleted": True, "retained": "audit_tombstone_only"}
