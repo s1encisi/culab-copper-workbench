@@ -196,3 +196,75 @@ def test_scanned_pdf_cannot_be_marked_indexed_without_ocr(tmp_path):
     assert exc.value.code == "DOCUMENT_OCR_REQUIRED"
     with pytest.raises(WorkbenchError):
         store.build_index(OWNER, "procedure", 1)
+
+
+def test_parse_revision_keeps_active_index_until_new_review_and_build(tmp_path):
+    from copper_mvp.knowledge_contracts import DocumentCorrections
+    store = KnowledgeStore(tmp_path, LifecycleEmbedding())
+    add(store, text="质量浓度使用 g/L。")
+    before = store.inspect(OWNER, "procedure", 1)
+    original = store.search(READER, "浓度")["items"][0]
+    correction = DocumentCorrections.model_validate({
+        "expected_parse_hash": before["parse_hash"], "note": "synthetic human correction",
+        "corrections": [{"block_id": 0, "regions": [
+            {"kind": "paragraph", "text": "质量浓度使用 g/L；单位换算需明确记录。"}]}]})
+    revised = store.processing.correct(OWNER, "procedure", 1, correction)
+    assert revised["status"] == "needs_review"
+    assert store.resolve(READER, original["citation"]["chunk_id"])["text"] == original["text"]
+    assert store.search(READER, "浓度")["items"][0]["citation"]["parse_hash"] == before["parse_hash"]
+    with pytest.raises(WorkbenchError) as error:
+        store.review(OWNER, "procedure", 1, True, "stale review", before["parse_hash"])
+    assert error.value.code == "VERSION_CONFLICT"
+    store.review(OWNER, "procedure", 1, True, "corrected text checked", revised["parse_hash"])
+    store.build_index(OWNER, "procedure", 1)
+    current = store.search(READER, "单位换算")["items"][0]
+    assert "单位换算" in current["text"]
+    assert current["citation"]["parse_hash"] == revised["parse_hash"]
+    with pytest.raises(WorkbenchError):
+        store.resolve(READER, original["citation"]["chunk_id"])
+    history = store.processing.history(OWNER, "procedure", 1)
+    assert len(history) == 2
+    assert store.processing.historical_parse(OWNER, "procedure", 1, 1)["parsed"]["blocks"][0]["text"] == "质量浓度使用 g/L。"
+
+
+def test_document_revocation_during_ocr_prevents_publishing_result(tmp_path):
+    from copper_mvp.knowledge_parsing import block
+    from copper_mvp.knowledge_embedding import load_dependencies
+    load_dependencies()
+    pytest.importorskip("pypdf")
+    from PIL import Image
+    output = io.BytesIO()
+    Image.new("RGB", (64, 64), "white").save(output, format="PDF")
+    store = KnowledgeStore(tmp_path, LifecycleEmbedding())
+    store.register(OWNER, spec(format="pdf"))
+    row = store.upload(OWNER, "procedure", 1, output.getvalue())
+    def recognise_then_revoke(payload, page, dpi):
+        store.change_access(OWNER, "procedure", DocumentAccess(revoked=True))
+        return block("ocr_page", "synthetic late result", {"page": page})
+    store.processing.ocr.recognize = recognise_then_revoke
+    with pytest.raises(WorkbenchError) as error:
+        store.processing.run_ocr(OWNER, "procedure", 1, row["parse_hash"])
+    assert error.value.code == "DOCUMENT_REVOKED"
+    with store.connection() as c:
+        assert c.execute("SELECT count(*) FROM document_parses").fetchone()[0] == 1
+        assert "synthetic late result" not in c.execute("SELECT parsed_json FROM document_versions").fetchone()[0]
+
+
+def test_long_table_row_groups_retain_headers_units_and_footnotes():
+    from copper_mvp.knowledge_parsing import block, token_count
+    rows = [[f"sample-{i:03}", f"{i}.5", "g/L"] for i in range(100)]
+    table = block("table", "\n".join(" | ".join(row) for row in rows), {"page": 1},
+                  headers=["样本", "数值", "单位"], rows=rows, footnotes=["合成数据"])
+    table["block_id"] = 0
+    chunks = make_chunks([table], target=100)
+    assert len(chunks) > 1
+    observed = []
+    for chunk in chunks:
+        assert chunk["text"].startswith("样本 | 数值 | 单位")
+        assert chunk["text"].endswith("合成数据")
+        assert token_count(chunk["text"]) <= 100
+        lines = [line for line in chunk["text"].splitlines() if line.startswith("sample-")]
+        assert all(line.endswith("g/L") for line in lines)
+        observed.extend(line.split(" | ")[0] for line in lines)
+        assert chunk["span"] is None and chunk["location"]["table_row_start"] <= chunk["location"]["table_row_end"]
+    assert observed == [row[0] for row in rows]

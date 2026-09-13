@@ -149,12 +149,14 @@ ParEGO/NEHVI 支持已接入的约束概率路径；MES/JES 首版通过 --bench
 
 ## G6m 本地文档知识库
 
-版本 0.24.0 增加文档登记、版本化解析、关键词和本地语义检索。文档、向量与引用全部保存在运行目录的 knowledge/ 中。HTTP 不接受服务器文件路径，文档内容通过登记后的上传接口提供。
+版本 0.24.1 增加文档登记、版本化解析、关键词和本地语义检索。文档、向量与引用全部保存在运行目录的 knowledge/ 中。HTTP 不接受服务器文件路径，文档内容通过登记后的上传接口提供。
 
 先运行 `python -B scripts/setup_knowledge.py`，安装独立依赖并下载固定哈希的公开中文嵌入模型。已有独立环境可以设置 COPPER_KNOWLEDGE_RUNTIME_DIR 与 COPPER_KNOWLEDGE_MODEL_DIR。检索时只读取本地文件，不下载权重或调用外部 API。嵌入来源：[BAAI BGE](https://huggingface.co/BAAI/bge-small-zh-v1.5)、[Xenova ONNX 转换](https://huggingface.co/Xenova/bge-small-zh-v1.5)，固定版本与哈希见 configs/runtime/knowledge_embedding.json。
 
 接口位于 /api/v2/knowledge：先 POST /documents 登记元数据与访问者，再 PUT /documents/{doc_id}/versions/{version}/content 上传原文，必要时审核，最后 POST 同版本的 /index 建立索引。POST /search 返回带版本、页码或段落、内容哈希的引用；引用和原文下载每次重新检查权限。更改访问者或撤销文档立即影响后续检索；新版本索引成功前保留旧索引。
 
-MD 表格保留完整行、表头与单位；DOCX 保留合并单元格结构、原始公式 XML 和图片位置。PDF 的版面、表格和公式需要审核；扫描页会显示 OCR 待完成状态。当前未实现扫描 OCR、会话记忆及助手文档工具接入，这些继续在 G6m 完成。文档文字是证据，不能授予审批或设备操作权限。
+MD 表格保留完整行、表头与单位；DOCX 保留合并单元格结构、原始公式 XML 和图片位置。PDF 的版面、表格和公式需要审核。扫描页通过同一版本的 /ocr 接口调用本机 RapidOCR；请求需携带当前 parse_hash。识别结果保存分数、文字框、页图哈希及模型版本，随后通过 /corrections 校正表格或公式，再以 /review 审核准确的解析哈希。长表格按完整行组切块并重复表头与脚注。修改解析时保留旧索引，完成审核和重建后原子切换；旧解析保留为可回查修订，删除文档时一并清除。会话记忆及助手文档工具接入继续在 G6m 完成。文档文字是证据，不能授予审批或设备操作权限。
 
 运行 `python -B scripts/verify_knowledge.py --output runs/g6m/verification-新编号` 可执行断网条件下的合成检索对照、引用回读与权限撤销验证。该结果用于接口验收；经审核的真实领域问答集评价仍待后续完成。
+
+扫描验证使用本地合成页。可用含 reportlab 的 Python 运行 `scripts/create_ocr_fixture.py --font <本地中文字体> --output runs/g6m/fixture-新编号`，再运行 `scripts/verify_knowledge_ocr.py --fixture runs/g6m/fixture-新编号/scan.pdf --output runs/g6m/ocr-新编号`。模型来源：[RapidOCR](https://github.com/RapidAI/RapidOCR)，检测/方向/识别模型的固定哈希位于 configs/runtime/knowledge_ocr.json。OCR 分数不是经过校准的正确率；合成页验证只证明该接口链路，不能替代真实领域文档评价。

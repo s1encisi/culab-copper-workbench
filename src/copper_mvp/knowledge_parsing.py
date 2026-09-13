@@ -162,7 +162,9 @@ def pdf_blocks(payload):
     result, issues = [], []
     for number, page in enumerate(reader.pages, 1):
         text = page.extract_text(extraction_mode="layout") or ""
-        location = {"page": number, "bbox": [float(v) for v in page.mediabox]}
+        location = {"page": number, "bbox": [float(v) for v in page.mediabox],
+                    "pdf_size_points": [float(page.mediabox.width), float(page.mediabox.height)],
+                    "coordinate_space": "pdf_points_bottom_left"}
         if text.strip():
             result.append(block("page", text.strip(), location, extracted_by="pypdf-layout"))
             issues.append({"location": location, "reason": "pdf_layout_table_equation_review"})
@@ -195,10 +197,37 @@ def make_chunks(blocks, target=480, overlap=80):
     """Preserve tables/equations as units; long prose keeps explicit character spans."""
     result = []
     for item in blocks:
+        if item["kind"] == "table" and token_count(item["text"]) > target:
+            details = item["details"]
+            headers, rows = details.get("headers", []), details.get("rows", [])
+            if rows and headers:
+                numbered = list(enumerate(rows, 1))
+                if rows[0] == headers:
+                    numbered = numbered[1:]
+                footnotes = details.get("footnotes", [])
+                prefix = " | ".join(headers)
+                suffix = ("\n" + "\n".join(footnotes)) if footnotes else ""
+                groups, group, size = [], [], token_count(prefix + suffix)
+                for number, row in numbered:
+                    row_size = token_count(" | ".join(row))
+                    if group and size + row_size > target:
+                        groups.append(group)
+                        group, size = [], token_count(prefix + suffix)
+                    group.append((number, row))
+                    size += row_size
+                if group:
+                    groups.append(group)
+                for group in groups:
+                    fragment = prefix + "\n" + "\n".join(" | ".join(row) for _, row in group) + suffix
+                    location = {**item["location"], "table_row_start": group[0][0], "table_row_end": group[-1][0]}
+                    result.append({"text": fragment, "heading": item["heading"], "kind": "table",
+                                   "block_id": item["block_id"], "location": location, "span": None,
+                                   "row_range": [group[0][0], group[-1][0]], "tokens": token_count(fragment)})
+                continue
         text = item["text"]
         if not text.strip():
             continue
-        structural = item["kind"] in {"table", "equation", "image", "code"}
+        structural = item["kind"] in {"table", "equation", "image", "code", "ocr_page", "page"}
         spans = list(TOKEN.finditer(text))
         starts = [0] if structural else range(0, max(len(spans), 1), target - overlap)
         for start in starts:

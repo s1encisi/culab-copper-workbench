@@ -4,7 +4,7 @@ from pydantic import AwareDatetime
 from starlette.concurrency import run_in_threadpool
 
 from copper_mvp.common import WorkbenchError
-from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess, DocumentReview, KnowledgeQuery
+from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess, DocumentReview, KnowledgeQuery, OCRRequest, DocumentCorrections
 from copper_mvp.knowledge_parsing import MAX_BYTES
 
 
@@ -46,7 +46,38 @@ def knowledge_router():
     @router.post("/documents/{doc_id}/versions/{version}/review")
     def review(request: Request, doc_id: str, version: int, payload: DocumentReview):
         store, actor = service(request)
-        return store.review(actor, doc_id, version, payload.accepted, payload.note)
+        return store.review(actor, doc_id, version, payload.accepted, payload.note, payload.expected_parse_hash)
+
+    @router.post("/documents/{doc_id}/versions/{version}/ocr")
+    def ocr(request: Request, doc_id: str, version: int, payload: OCRRequest):
+        store, actor = service(request)
+        return store.processing.run_ocr(actor, doc_id, version, **payload.model_dump())
+
+    @router.post("/documents/{doc_id}/versions/{version}/corrections")
+    def corrections(request: Request, doc_id: str, version: int, payload: DocumentCorrections):
+        store, actor = service(request)
+        return store.processing.correct(actor, doc_id, version, payload)
+
+    @router.get("/documents/{doc_id}/versions/{version}/parses")
+    def parse_history(request: Request, doc_id: str, version: int):
+        store, actor = service(request)
+        return {"items": store.processing.history(actor, doc_id, version)}
+
+    @router.get("/documents/{doc_id}/versions/{version}/parses/{revision}")
+    def historical_parse(request: Request, doc_id: str, version: int, revision: int):
+        store, actor = service(request)
+        return store.processing.historical_parse(actor, doc_id, version, revision)
+
+    @router.get("/documents/{doc_id}/versions/{version}/pages/{page}.png")
+    def page_image(request: Request, doc_id: str, version: int, page: int, as_of: AwareDatetime | None = None):
+        store, actor = service(request)
+        raw = store.processing.page_image(actor, doc_id, version, page, as_of)
+        return Response(raw, media_type="image/png", headers={"Cache-Control": "no-store"})
+
+    @router.get("/inventory")
+    def inventory(request: Request):
+        store, actor = service(request)
+        return {"items": store.processing.inventory(actor)}
 
     @router.post("/documents/{doc_id}/versions/{version}/index")
     def index(request: Request, doc_id: str, version: int):

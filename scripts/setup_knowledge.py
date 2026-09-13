@@ -10,7 +10,9 @@ from urllib.request import urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGES = ["onnxruntime==1.30.0", "tokenizers==0.23.2", "pypdf==6.18.1",
-            "python-docx==1.2.0", "lxml==6.1.3", "flatbuffers==25.12.19", "protobuf==6.33.5"]
+            "python-docx==1.2.0", "lxml==6.1.3", "flatbuffers==25.12.19", "protobuf==6.33.5",
+            "rapidocr-onnxruntime==1.4.4", "pypdfium2==5.13.0", "opencv-python-headless==4.10.0.84",
+            "pyclipper==1.4.0", "shapely==2.1.2"]
 
 
 def main():
