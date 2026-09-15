@@ -217,7 +217,7 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
             return JSONResponse(status_code=404, content={"error": {"code": "NOT_FOUND", "message": "没有该接口"}})
         index = dist / "index.html"
         if index.is_file():
-            return FileResponse(index)
+            return FileResponse(index, headers={"Cache-Control": "no-cache"})
         return JSONResponse({"message": "后端已就绪，请构建 web 前端后刷新。", "api_schema": "/openapi.json"})
 
     return app

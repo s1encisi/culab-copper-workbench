@@ -24,6 +24,7 @@ export default function ModelsWorkspace({legacy,eventId}:{legacy:ReactNode;event
   const paths={comparison:'/v2/model-comparisons/',artifact:'/v2/model-artifacts/',calibration:'/v2/calibrations/',ensemble:'/v2/ensemble-studies/'};
   const selectedId=selection?text(selection.row.id??selection.row.run_id):'';
   const detail=useRemote<RecordValue>(selection&&selection.kind!=='method'?paths[selection.kind]+selectedId:null);
+  const refreshArtifact=useCallback(()=>{refreshAll();detail.reload();},[refreshAll,detail.reload]);
   const current=selection?.kind==='method'?selection.row:detail.data;
   const descriptor=object(current?.descriptor),result=object(current?.result);
   useEffect(()=>{if(!current||!['queued','running'].includes(text(current.status)))return;const timer=setInterval(()=>{detail.reload();refreshAll();},1600);return()=>clearInterval(timer);},[current?.status,detail.reload,refreshAll]);
@@ -69,7 +70,7 @@ export default function ModelsWorkspace({legacy,eventId}:{legacy:ReactNode;event
       {selection.kind==='method'?<><Facts values={[{label:'实现',value:text(current?.implementation)},{label:'方法版本',value:text(current?.method_version)},{label:'输入字段',value:text(current?.feature_count)},{label:'输出结构',value:text(current?.multi_output)}]}/><JsonDetails value={current}/></>:<>
         <Status value={current?.status}/>{object(current?.error).message?<Notice tone="error">{text(object(current?.error).message)}</Notice>:null}
         {selection.kind==='artifact'?<><Facts values={[{label:'方法',value:text(descriptor.method_id)},{label:'目标 / 单位',value:(descriptor.target==='cu'?'Cu':'As')+' · '+text(descriptor.unit)},{label:'来源',value:text(descriptor.source_kind)},{label:'校准器',value:descriptor.calibrator?'已绑定':'未绑定'}]}/>
-          {current?<ArtifactActions key={selectedId} artifact={current} canCompute={canCompute} canApprove={canApprove} isCurrent={Object.values(pointers.data||{}).some(value=>object(value).candidate_id===selectedId)} onChanged={refreshAll}/>:null}
+          {current?<ArtifactActions key={selectedId} artifact={current} canCompute={canCompute} canApprove={canApprove} isCurrent={Object.values(pointers.data||{}).some(value=>object(value).candidate_id===selectedId)} onChanged={refreshArtifact}/>:null}
           <JsonDetails value={descriptor.benchmark} label="查看完整资格证据"/><JsonDetails value={current}/>
         </>:<>{items(result.metrics).length?<DataTable rows={items(result.metrics)} columns={selection.kind==='calibration'?[{key:'mode',label:'区间类型',render:r=>intervalLabels[text(r.mode)]||text(r.mode)},{key:'seed',label:'拟合种子'},...metricsColumns,{key:'normalized_width',label:'标准化宽度',render:r=>fmt(r.normalized_width,3)}]:metricsColumns}/>:<EmptyState title={current?.status==='completed'?'该记录没有汇总指标':'结果尚未生成'}>运行状态和错误以服务器记录为准。</EmptyState>}
           {selection.kind==='calibration'&&current?.status==='completed'&&eventId?<><label className="field">区间回放方法<select value={calibrationMethod} onChange={e=>setCalibrationMethod(e.target.value)}>{[...new Set(items(result.metrics).map(row=>text(row.method_id)))].map(method=><option key={method} value={method}>{method}</option>)}</select></label><button disabled={busy||!canCompute} onClick={()=>void execute(()=>request('/v2/calibrations/'+selectedId+'/predict',{body:{event_id:eventId,method_id:calibrationMethod}}))}>回放所选事件的校准区间</button></>:null}

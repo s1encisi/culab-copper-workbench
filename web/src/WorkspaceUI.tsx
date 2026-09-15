@@ -43,7 +43,22 @@ export function Facts({values}:{values:{label:string;value:ReactNode}[]}){return
 export function JsonDetails({value,label='查看完整记录'}:{value:unknown;label?:string}){return <details className="workspace-json"><summary>{label}</summary><pre>{JSON.stringify(value,null,2)}</pre></details>;}
 export function Drawer({title,onClose,children}:{title:string;onClose:()=>void;children:ReactNode}){
   const panel=useRef<HTMLElement>(null);
-  useEffect(()=>{const old=document.activeElement as HTMLElement|null;panel.current?.focus();const key=(event:KeyboardEvent)=>{if(event.key==='Escape')onClose();if(event.key==='Tab'&&panel.current){const all=Array.from(panel.current.querySelectorAll<HTMLElement>('button,a[href],input,select,textarea,[tabindex="0"]')).filter(e=>!e.hasAttribute('disabled')&&e.getClientRects().length>0);const first=all[0],last=all.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};document.addEventListener('keydown',key);return()=>{document.removeEventListener('keydown',key);old?.focus();};},[onClose]);
+  useEffect(()=>{
+    const old=document.activeElement as HTMLElement|null;panel.current?.focus();
+    const key=(event:KeyboardEvent)=>{
+      if(event.key==='Escape')onClose();
+      if(event.key!=='Tab'||!panel.current)return;
+      const all=Array.from(panel.current.querySelectorAll<HTMLElement>('button,a[href],input,select,textarea,summary,[tabindex]'))
+        .filter(element=>element.tabIndex>=0&&!element.matches(':disabled')&&element.getClientRects().length>0);
+      const first=all[0],last=all.at(-1),active=document.activeElement;
+      if(!first){event.preventDefault();return;}
+      const atPanel=active===panel.current||!panel.current.contains(active);
+      if(event.shiftKey&&(atPanel||active===first)){event.preventDefault();last?.focus();}
+      else if(!event.shiftKey&&(atPanel||active===last)){event.preventDefault();first.focus();}
+    };
+    document.addEventListener('keydown',key);
+    return()=>{document.removeEventListener('keydown',key);old?.focus();};
+  },[onClose]);
   return <div className="workspace-drawer-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><aside className="workspace-drawer" ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button onClick={onClose} aria-label="关闭详情"><X size={19}/></button></header>{children}</aside></div>;
 }
 export function DataTable({columns,rows,onRow}:{columns:{key:string;label:string;render?:(row:RecordValue)=>ReactNode}[];rows:RecordValue[];onRow?:(row:RecordValue)=>void}){

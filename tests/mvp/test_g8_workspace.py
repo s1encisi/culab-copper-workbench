@@ -44,3 +44,19 @@ def test_workspace_summaries_use_current_actor_and_real_records(tmp_path):
         assert {row["id"] for row in owner_visible}=={owner_release["id"],reader_release["id"]}
         client.cookies.clear()
         assert client.get("/api/v2/workspace").status_code==401
+
+
+def test_frontend_entry_revalidates_after_a_new_build(tmp_path):
+    frontend=tmp_path/"ui"
+    frontend.mkdir()
+    index=frontend/"index.html"
+    index.write_text("<html>first-build</html>",encoding="utf-8")
+    with TestClient(create_app(tmp_path/"runtime",DataRepository(),frontend_dir=frontend),base_url="http://127.0.0.1") as client:
+        first=client.get("/models")
+        assert first.status_code==200
+        assert first.headers["cache-control"]=="no-cache"
+        index.write_text("<html>updated-second-build</html>",encoding="utf-8")
+        second=client.get("/models",headers={"If-None-Match":first.headers["etag"]})
+        assert second.status_code==200
+        assert "updated-second-build" in second.text
+        assert second.headers["etag"]!=first.headers["etag"]
