@@ -245,3 +245,11 @@ def test_target_pointers_only_form_joint_region_when_calibration_group_matches(s
         approve(service,owner,release)
     result=service.forecast(owner,{"request_key":"joint-record","event_id":"event"})
     assert (result["joint_prediction_region"] is not None)==shared_calibrator
+
+
+def test_shadow_history_retains_artifact_access_boundary(system):
+    service,owner,source,clock=system
+    artifact,shadow=ready(service,owner)
+    assert [row["id"] for row in service.shadows(owner,artifact["id"])]==[shadow["id"]]
+    with pytest.raises(WorkbenchError,match="无权"):
+        service.shadows(Principal("unrelated","researcher"),artifact["id"])

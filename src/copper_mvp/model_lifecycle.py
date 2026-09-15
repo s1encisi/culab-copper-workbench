@@ -170,6 +170,13 @@ class ModelLifecycle:
             raise WorkbenchError("影子证据哈希不符","SOURCE_CHANGED")
         return result
 
+    def shadows(self,actor,candidate_id):
+        self.artifact(actor,candidate_id)
+        with self.connection() as c:
+            rows=c.execute("SELECT id FROM model_shadows WHERE candidate_id=? ORDER BY created_at DESC",
+                           (candidate_id,)).fetchall()
+        return [self.shadow(actor,row["id"]) for row in rows]
+
     def pointers(self,actor):
         actor.require("read")
         return {t:self.pointer(actor.project_id,t) for t in ("cu","as")}
@@ -224,6 +231,14 @@ class ModelLifecycle:
         row["payload"]=json.loads(row["payload"]);row["approval"]=json.loads(row["approval"]) if row["approval"] else None
         row.pop("proposer_auth")
         return row
+
+    def proposals(self,actor):
+        actor.require("read")
+        with self.connection() as c:
+            rows=c.execute(
+                "SELECT id FROM model_release_proposals WHERE project_id=? AND (owner_id=? OR ?='owner') ORDER BY created_at DESC",
+                (actor.project_id,actor.user_id,actor.role)).fetchall()
+        return [self.proposal(actor,row["id"]) for row in rows]
 
     def propose(self,actor,request,*,rollback=False):
         actor.require("compute")

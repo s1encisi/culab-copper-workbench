@@ -1,12 +1,18 @@
 import {useCallback,useEffect,useRef,useState,type ReactNode} from 'react';
 import {AlertCircle,ChevronRight,LoaderCircle,RefreshCw,X} from 'lucide-react';
-import {date,fmt} from './api';
+import {date as isoDate,fmt} from './api';
+
+const date=(value:unknown):string=>{
+  if(value===null||value===undefined||value==='')return '—';
+  if(typeof value==='number'||/^\d{10}(\.\d+)?$/.test(String(value))){const parsed=new Date(Number(value)*1000);return Number.isFinite(parsed.getTime())?isoDate(parsed.toISOString()):'—';}
+  return isoDate(String(value));
+};
 
 export type RecordValue=Record<string,unknown>;
 export const object=(value:unknown):RecordValue=>value&&typeof value==='object'&&!Array.isArray(value)?value as RecordValue:{};
 export const items=(value:unknown):RecordValue[]=>Array.isArray(value)?value.map(object):[];
 export const text=(value:unknown,fallback='—')=>value===null||value===undefined?fallback:String(value);
-export const labels:Record<string,string>={queued:'排队中',running:'运行中',completed:'已完成',failed:'失败',cancelled:'已取消',paused:'已暂停',pausing:'暂停请求中',cancelling:'取消请求中',needs_attention:'需要处理',partial:'部分完成',partial_failure:'部分失败',registered:'已登记',parsed:'已解析',indexed:'已索引',needs_review:'待审核',candidate:'候选',runnable:'可运行',tested:'已测试',benchmarked:'已比较',shadow:'影子验证',approved:'已批准',retired:'已退休',quarantined:'已隔离',revoked:'已撤销',heading:'标题',paragraph:'正文',list_item:'条款',table:'表格',equation:'公式',image:'图像',ocr_page:'OCR 页面',page:'页面',not_captured:'未创建',expired:'已过期',current:'有效',references_changed:'来源已变更'};
+export const labels:Record<string,string>={pending:'等待审批',applied:'已生效',rejected:'已拒绝',interrupted:'已中断',queued:'排队中',running:'运行中',completed:'已完成',failed:'失败',cancelled:'已取消',paused:'已暂停',pausing:'暂停请求中',cancelling:'取消请求中',needs_attention:'需要处理',partial:'部分完成',partial_failure:'部分失败',registered:'已登记',parsed:'已解析',indexed:'已索引',needs_review:'待审核',candidate:'候选',runnable:'可运行',tested:'已测试',benchmarked:'已比较',shadow:'影子验证',approved:'已批准',retired:'已退休',quarantined:'已隔离',revoked:'已撤销',heading:'标题',paragraph:'正文',list_item:'条款',table:'表格',equation:'公式',image:'图像',ocr_page:'OCR 页面',page:'页面',not_captured:'未创建',expired:'已过期',current:'有效',references_changed:'来源已变更'};
 export async function request<T>(path:string,options:{method?:string;body?:unknown;signal?:AbortSignal}={}):Promise<T>{
   const binary=options.body instanceof Blob;
   const response=await fetch('/api'+path,{method:options.method||(options.body===undefined?'GET':'POST'),signal:options.signal,
@@ -41,6 +47,6 @@ export function Drawer({title,onClose,children}:{title:string;onClose:()=>void;c
   return <div className="workspace-drawer-backdrop" onMouseDown={e=>{if(e.target===e.currentTarget)onClose();}}><aside className="workspace-drawer" ref={panel} tabIndex={-1} role="dialog" aria-modal="true" aria-label={title}><header><h2>{title}</h2><button onClick={onClose} aria-label="关闭详情"><X size={19}/></button></header>{children}</aside></div>;
 }
 export function DataTable({columns,rows,onRow}:{columns:{key:string;label:string;render?:(row:RecordValue)=>ReactNode}[];rows:RecordValue[];onRow?:(row:RecordValue)=>void}){
-  return <div className="workspace-table-wrap"><table className="workspace-table"><thead><tr>{columns.map(c=><th key={c.key} scope="col">{c.label}</th>)}{onRow?<th scope="col"><span className="sr-only">详情</span></th>:null}</tr></thead><tbody>{rows.map((row,index)=><tr key={text(row.id??row.doc_id??row.method_id??row.run_id,index.toString())}>{columns.map(c=><td key={c.key}>{c.render?c.render(row):text(row[c.key])}</td>)}{onRow?<td><button className="workspace-row-action" onClick={()=>onRow(row)} aria-label={'查看 '+text(row.title??row.method_id??object(row.metadata).title??row.id??row.doc_id,'记录')}><ChevronRight size={17}/></button></td>:null}</tr>)}</tbody></table></div>;
+  return <div className="workspace-table-wrap"><table className="workspace-table"><thead><tr>{columns.map(c=><th key={c.key} scope="col">{c.label}</th>)}{onRow?<th scope="col"><span className="sr-only">详情</span></th>:null}</tr></thead><tbody>{rows.map((row,index)=><tr key={text(row.id??row.doc_id??row.method_id??row.run_id,index.toString())+':'+index}>{columns.map(c=><td key={c.key}>{c.render?c.render(row):text(row[c.key])}</td>)}{onRow?<td><button className="workspace-row-action" onClick={()=>onRow(row)} aria-label={'查看 '+text(row.title??row.method_id??object(row.metadata).title??row.id??row.doc_id??row.run_id,'记录')}><ChevronRight size={17}/></button></td>:null}</tr>)}</tbody></table></div>;
 }
 export {date,fmt};

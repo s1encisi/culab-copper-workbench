@@ -32,5 +32,15 @@ def test_workspace_summaries_use_current_actor_and_real_records(tmp_path):
         assert client.get("/api/v2/workspace/research-tasks/"+identities[1]+"/events",headers=headers).status_code==200
         audit=client.get("/api/v2/workspace/governance",headers=headers).json()
         assert all(row["task_id"]!=identities[0] for row in audit["events"])
+        owner_release=client.post("/api/v2/releases",json={"request_key":"owner-proposal","candidate_id":"builtin-persistence",
+            "target":"cu","expected_version":0,"reason":"synthetic list isolation"}).json()
+        reader_release=client.post("/api/v2/releases",headers=headers,json={"request_key":"reader-proposal","candidate_id":"builtin-persistence",
+            "target":"as","expected_version":0,"reason":"synthetic list isolation"}).json()
+        visible=client.get("/api/v2/releases",headers=headers)
+        assert visible.status_code==200
+        assert [row["id"] for row in visible.json()["items"]]==[reader_release["id"]]
+        assert all("proposer_auth" not in row for row in visible.json()["items"])
+        owner_visible=client.get("/api/v2/releases").json()["items"]
+        assert {row["id"] for row in owner_visible}=={owner_release["id"],reader_release["id"]}
         client.cookies.clear()
         assert client.get("/api/v2/workspace").status_code==401

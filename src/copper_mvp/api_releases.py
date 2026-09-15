@@ -44,6 +44,10 @@ def release_router():
     def shadow(request:Request,identifier:str,payload:ShadowRequest):
         return service(request).start_shadow(actor(request,"compute"),identifier,payload,request.app.state.workbench.executor)
 
+    @router.get("/model-artifacts/{identifier}/shadows")
+    def shadows(request:Request,identifier:str):
+        return {"items":service(request).shadows(actor(request),identifier)}
+
     @router.get("/model-shadows/{identifier}")
     def shadow_result(request:Request,identifier:str):
         return service(request).shadow(actor(request),identifier)
@@ -59,6 +63,10 @@ def release_router():
     @router.get("/model-pointers")
     def pointers(request:Request):
         return service(request).pointers(actor(request))
+
+    @router.get("/releases")
+    def proposals(request:Request):
+        return {"items":service(request).proposals(actor(request))}
 
     @router.post("/releases",status_code=201)
     def propose(request:Request,payload:ReleaseRequest):
