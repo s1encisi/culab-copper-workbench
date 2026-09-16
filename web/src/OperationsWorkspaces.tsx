@@ -39,7 +39,4 @@ export function GovernanceWorkspace({diagnostics}:{diagnostics:React.ReactNode})
   </section>;
 }
 
-export function AdaptationWorkspace(){
-  const info=useRemote<RecordValue>('/v2/workspace');
-  return <section className="workspace-stack"><Toolbar title="领域适配"/>{info.error?<Notice tone="error">{info.error}</Notice>:null}<section className="workspace-panel"><EmptyState title="尚未接入领域训练服务">训练提案、审核数据、候选适配器与对照结果将在服务接入后显示。</EmptyState><div className="workspace-process"><span>来源与授权</span><span>数据拆分</span><span>固定方案对照</span><span>工件审核</span></div><Notice>当前已有文档检索、受控正文授权与研究会话。没有训练工件时，不生成适配效果分数。</Notice></section></section>;
-}
+export {default as AdaptationWorkspace} from './DomainWorkspace';

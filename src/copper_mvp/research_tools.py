@@ -108,7 +108,13 @@ class ResearchTools:
 
     def project_status(self):
         data = self.wb.data
-        return {"version": APP_VERSION, "models": catalog(), "optimizers": optimizer_catalog(),
+        models, optimizers = catalog(), optimizer_catalog()
+        return {"version": APP_VERSION,
+                "targets": [{"name": "cu", "unit": "g/L"}, {"name": "as", "unit": "mg/L"}],
+                "models": {"count": len(models["items"]), "items": [
+                    {"method_id": row["method_id"], "status": row["status"]} for row in models["items"]]},
+                "optimizers": {"count": len(optimizers["items"]), "items": [
+                    {"optimizer_id": row["optimizer_id"], "status": row["status"]} for row in optimizers["items"]]},
                 "development_events": len(data.frame), "oof_events": len(data.fold_for),
                 "data_period": {"start": source_time(data.frame.decision_at.min()).isoformat(),
                                 "end": source_time(data.frame.decision_at.max()).isoformat()},

@@ -1,0 +1,76 @@
+{
+  "stage": "G7 prompt/RAG evaluation",
+  "date": "2026-09-16",
+  "version": "0.26.0",
+  "branch": "codex/g7-domain-evaluation",
+  "scope": "two synthetic questions; four real provider tasks",
+  "provider": "deepseek-flash",
+  "budget_cny": 2,
+  "spent_cny": 0.26662056,
+  "unsettled_cny": 0,
+  "source_version_at_evaluation": "c67df02a1e885a76469ed7aa66e37067d1431923f4c844be724dd7b17510973a",
+  "summary": [
+    {
+      "variant": "prompt",
+      "n": 2,
+      "completed": 0,
+      "answers": 0,
+      "document_citations": 0,
+      "cost_cny": 0.13100624,
+      "unsettled_cny": 0,
+      "p50_ms": 17205.871500002104,
+      "p95_ms": 18152.75268000114
+    },
+    {
+      "variant": "rag",
+      "n": 2,
+      "completed": 2,
+      "answers": 2,
+      "document_citations": 3,
+      "cost_cny": 0.13561432,
+      "unsettled_cny": 0,
+      "p50_ms": 11929.523500000869,
+      "p95_ms": 12099.141910001163
+    }
+  ],
+  "cases": [
+    {
+      "case_id": "1",
+      "variant": "prompt",
+      "status": "failed",
+      "model_calls": 4,
+      "tool_calls": 4
+    },
+    {
+      "case_id": "2",
+      "variant": "prompt",
+      "status": "failed",
+      "model_calls": 4,
+      "tool_calls": 4
+    },
+    {
+      "case_id": "1",
+      "variant": "rag",
+      "status": "completed",
+      "model_calls": 3,
+      "tool_calls": 2
+    },
+    {
+      "case_id": "2",
+      "variant": "rag",
+      "status": "completed",
+      "model_calls": 3,
+      "tool_calls": 3
+    }
+  ],
+  "review": "RAG core rules present; one unit-wording issue; Prompt cases reached model-call limit.",
+  "followup_fix": "compact project_status catalog; remaining comparison cases continue after a failed case",
+  "post_fix_paid_retest": false,
+  "targeted_tests_passed": 7,
+  "test_report_sha256": "70c4eea81541f9310c10a1c29f5532bdea5d6c3596031c54385e589b9f5fb47a",
+  "typescript": "passed",
+  "production_build": "passed",
+  "browser": "domain navigation, form and results checked",
+  "weight_training": "not_started_conditional",
+  "full_general_quality_benchmark": false
+}

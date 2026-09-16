@@ -10,7 +10,7 @@ max_wall_seconds: 300
 max_cost_cny: 2.0
 monthly_limit_cny: 100.0
 pricing:
-  verified_on: '2026-09-11'
+  verified_on: '2026-09-16'
   source: https://api-docs.deepseek.com/zh-cn/quick_start/pricing/
   cache_hit_per_million_cny: 0.04
   cache_miss_per_million_cny: 2.0
