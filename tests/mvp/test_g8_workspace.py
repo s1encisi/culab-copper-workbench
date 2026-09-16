@@ -60,3 +60,23 @@ def test_frontend_entry_revalidates_after_a_new_build(tmp_path):
         assert second.status_code==200
         assert "updated-second-build" in second.text
         assert second.headers["etag"]!=first.headers["etag"]
+
+
+def test_stopped_calibration_is_reported_without_rewriting_saved_evidence(tmp_path,monkeypatch):
+    import json
+    import copper_mvp.model_comparisons as jobs
+    monkeypatch.setattr(jobs,"process_alive",lambda pid:False)
+    with TestClient(create_app(tmp_path,DataRepository()),base_url="http://127.0.0.1") as client:
+        wb=client.app.state.workbench
+        client.post("/api/auth/session",json={"access_code":wb.access.owner_key_path.read_text().strip()})
+        identifier="d"*32
+        folder=wb.root/"calibration_studies"/identifier
+        folder.mkdir(parents=True)
+        payload={"id":identifier,"owner_pid":123456,"status":"running","created_at":"2026-01-01T00:00:00+00:00","request":{}}
+        saved=json.dumps(payload).encode()
+        (folder/"state.json").write_bytes(saved)
+        assert client.get("/api/v2/calibrations/"+identifier).json()["status"]=="interrupted"
+        assert client.get("/api/v2/calibrations").json()["items"][0]["status"]=="interrupted"
+        tasks=client.get("/api/v2/workspace/tasks").json()["items"]
+        assert next(row for row in tasks if row["id"]==identifier)["status"]=="interrupted"
+        assert (folder/"state.json").read_bytes()==saved

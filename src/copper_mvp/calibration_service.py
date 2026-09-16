@@ -10,6 +10,7 @@ import joblib
 import numpy as np
 
 from copper_mvp.access import PROJECT
+from copper_mvp.model_comparisons import observed_job_state
 from copper_mvp.calibration import SplitC90
 from copper_mvp.calibration_evaluation import evaluate_calibration,read_calibration_training
 from copper_mvp.calibration_training import train_calibration_study
@@ -60,14 +61,14 @@ class CalibrationService:
         root=self.directory(identifier)
         if not (root/"state.json").is_file():
             raise WorkbenchError("校准研究不存在","CALIBRATION_NOT_FOUND")
-        state=json.loads((root/"state.json").read_text(encoding="utf-8"))
+        state=observed_job_state(json.loads((root/"state.json").read_text(encoding="utf-8")))
         if (root/"evaluation.json").is_file():
             state["result"]=json.loads((root/"evaluation.json").read_text(encoding="utf-8"))
         return state
 
     def list(self,actor):
         self.authorize(actor)
-        return [json.loads(path.read_text(encoding="utf-8")) for path in sorted(self.root.glob("*/state.json"),key=lambda p:p.stat().st_mtime,reverse=True)[:100]]
+        return [observed_job_state(json.loads(path.read_text(encoding="utf-8"))) for path in sorted(self.root.glob("*/state.json"),key=lambda p:p.stat().st_mtime,reverse=True)[:100]]
 
     def submit(self,actor,request,executor):
         self.authorize(actor,"compute")
@@ -90,7 +91,7 @@ class CalibrationService:
         root=self.directory(identifier)
         def update(**values):
             with self.lock:
-                state=json.loads((root/"state.json").read_text(encoding="utf-8"));state.update(values)
+                state=observed_job_state(json.loads((root/"state.json").read_text(encoding="utf-8")));state.update(values)
                 write_json(root/"state.json",state)
         update(status="running",started_at=utc_now())
         try:

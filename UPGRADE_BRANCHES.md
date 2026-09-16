@@ -1,131 +1,66 @@
-# 升级分支导航
+# 分支导航与依赖
 
-本项目沿用设计文档中的 G 编号。每个阶段保存为独立分支；有依赖的阶段从对应源码节点继续，无依赖的补充工作从共同基点分出，再通过合并提交集成。
+项目沿用设计中的 G 编号。每个阶段保存源码节点，阶段接口实现、研究验收和发布资格分别记录。
 
-## 2026-09-15 已实现功能复查
+## 入口
 
-本轮仅复查已实现模块，完整升级继续保持未完成。修复分支 codex/g8-review-20260915 从 f0e9283 建立，保留此前的 g8-ui 和 g8-models-checkpoint 固定检查点。
+- main：固定在 34933e0 的升级前基线，未合入升级内容。
+- codex/portfolio-release-20260916：完整交付源码、公开演示和项目展示入口。
+- codex/system-upgrade：综合升级入口，快进到交付节点。
+- 实验未完成项与前置条件见 [CLOSEOUT.md](CLOSEOUT.md)。
 
-已复现并修复四个问题：工件状态未刷新导致退休版本冲突；详情抽屉焦点逃逸及详情键盘不可达；上传重试重复建档；前端入口缓存造成新构建未及时生效。每项均保留前后对照证据。
+## 阶段分支
 
-本轮 74 个独立自动测试用例通过（75 次执行，含 1 个重复回归用例）。TypeScript 和生产构建通过；本地浏览器复测覆盖实际工件影子/退休、合成上传故障重试与恢复、桌面/窄屏焦点。默认研究发布指针保持 Persistence。本轮没有重新运行未完成的研究实验、发起付费模型调用或推送远端。
+比较使用实际共同依赖的固定提交，避免后续分支补丁改变早期阶段的比较口径。
 
-完整功能说明及本地验收材料保存在原工作区的 docs 和 runs 中。
-
-## 2026-09-15 收尾检查点
-
-完整升级按用户要求暂停，当前保留已有成果，待明确恢复后再继续。
-
-- 固定分支 codex/g8-ui：a04d31c，十工作区初始界面检查点。
-- 固定分支 codex/g8-models-checkpoint：本次新增的模型流程检查点，继承 a04d31c。保存影子回放进度与历史、发布提案复查、退休/回退界面、集成研究入口以及对应的权限范围读取接口。
-- codex/g8：恢复 G8 工作时的入口；main 继续保留 34933e0 基线。
-
-本次只做保存与启动核验。相关 13 项测试在前次修改后通过；本次 TypeScript 检查、前端构建、认证后的只读接口和浏览器首屏启动检查通过。新模型发布/回退界面尚未完成完整交互验收；G7、部分模型验收和远端同步继续保留为未完成。
-
-G6j 与 G6l 的原实验进程当前均不存在，文件中残留的 running 状态不代表实验仍在运行。本次保留全部原始工件，不重启或修改其结果文件。详细恢复顺序与本地证据见工作区的收尾交接记录。
-
-## 先看这三个入口
-
-- [main](https://github.com/s1encisi/culab-copper-workbench/tree/main)：升级前基线，固定在 34933e0，本轮升级没有修改它。
-- [codex/system-upgrade](https://github.com/s1encisi/culab-copper-workbench/tree/codex/system-upgrade)：已集成阶段的汇总入口。本地为 9765f3e，GitHub 为 31d6cab；目前集成到 G6g。
-- 本地 codex/g8-ui：十工作区界面的固定检查点，继承 G6n 校准发布接口。codex/g8 继续承接界面整合；此检查点不等于整轮升级验收完成。
-
-源码已保存、实验已验收和已上传 GitHub 是三件不同的事，下表分别记录。G7 尚未实施；G8 先使用现有后端完成界面整合，领域适配入口明确显示服务尚未接入。
-
-## 已上传的阶段
-
-查看某阶段的完整项目，打开分支；只看该阶段的改动，打开“本阶段差异”。以下远端状态于 2026-09-13 通过 git ls-remote 核实。
-
-| 阶段 | 分支 | 继承阶段 | 改动主题 | 阶段源码提交 | 本阶段差异 | 状态 |
-| --- | --- | --- | --- | --- | --- | --- |
-| G1 | [`codex/g1`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g1) | main | 数据、时间边界与事件证据 | [`d2ea1eb`](https://github.com/s1encisi/culab-copper-workbench/commit/d2ea1eb873e989b41feb5b70c46cf60965dd1b7d) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/main...codex/g1) | 已上传源码节点 |
-| G2a | [`codex/g2a`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g2a) | G1 | 模型注册与固定协议比较 | [`24949dd`](https://github.com/s1encisi/culab-copper-workbench/commit/24949ddfa2b497e4287753823d798833e175f58d) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g1...codex/g2a) | 已上传源码节点 |
-| G2b | [`codex/g2b`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g2b) | G2a | 优化器注册与统一评价 | [`0a86817`](https://github.com/s1encisi/culab-copper-workbench/commit/0a868173f88566cefd4116823a44ec9d4fc63ef6) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g2a...codex/g2b) | 已上传源码节点 |
-| G3 | [`codex/g3`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g3) | G2b | 研究对话、权限与任务恢复 | [`80b85e3`](https://github.com/s1encisi/culab-copper-workbench/commit/80b85e3f482438e8017793fdd65ba4b317099ada) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g2b...codex/g3) | 已上传源码节点 |
-| G4 | [`codex/g4`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g4) | G3 | Mock 控制、精确审批与回读 | [`e4c5ef5`](https://github.com/s1encisi/culab-copper-workbench/commit/e4c5ef54c4cd443835590e835479822fcec3d947) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g3...codex/g4) | 已上传源码节点 |
-| G5a | [`codex/g5a`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5a) | G4 | 成熟标签评价与影子路由 | [`27923fd`](https://github.com/s1encisi/culab-copper-workbench/commit/27923fdd31a46a161038ca5fa100c4a36b26c748) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g4...codex/g5a) | 已上传源码节点 |
-| G5b | [`codex/g5b`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5b) | G5a | 嵌套 OOF 集成与时间块 Bagging | [`37f47c2`](https://github.com/s1encisi/culab-copper-workbench/commit/37f47c22dbcba68b40d94169a2ce13b1a5a7a6f0) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g5a...codex/g5b) | 已上传源码节点 |
-| G5c | [`codex/g5c`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5c) | G5b | 模型工件登记、发布与回退 | [`a0ba976`](https://github.com/s1encisi/culab-copper-workbench/commit/a0ba976e6f2f6b84f160ec0958210935f3a46cef) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g5b...codex/g5c) | 已上传源码节点 |
-| G5d | [`codex/g5d`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5d) | G5c | 优化器组合与配对比较 | [`1c46bf1`](https://github.com/s1encisi/culab-copper-workbench/commit/1c46bf1083f401c9455d4b3d1ed06c1c2ad544b8) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g5c...codex/g5d) | 已上传源码节点 |
-| G6a | [`codex/g6a`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6a) | G5d | 经典预测方法扩展 | [`19bcef6`](https://github.com/s1encisi/culab-copper-workbench/commit/19bcef6d7ba497bfe396a1e408129d4f90bc886d) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g5d...codex/g6a) | 已上传源码节点 |
-| G6b | [`codex/g6b`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6b) | G6a | 统计与事件序列方法 | [`6149b91`](https://github.com/s1encisi/culab-copper-workbench/commit/6149b910993013aa3864a11942482c925b143582) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6a...codex/g6b) | 已上传源码节点 |
-| G6c | [`codex/g6c`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6c) | G6b | pymoo 优化方法扩展 | [`00f231e`](https://github.com/s1encisi/culab-copper-workbench/commit/00f231ed0975551c9c3de2918910129eb3d694a1) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6b...codex/g6c) | 已上传源码节点 |
-| G6d | [`codex/g6d`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6d) | G6c | Platypus 优化方法扩展 | [`79f75c7`](https://github.com/s1encisi/culab-copper-workbench/commit/79f75c7946f26de8646f8187c3dd626627bd762f) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6c...codex/g6d) | 已上传源码节点 |
-| G6e | [`codex/g6e`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6e) | G6d | HypE 与标量化前沿 | [`0d4d3e5`](https://github.com/s1encisi/culab-copper-workbench/commit/0d4d3e5a9d09a582d978055fe887bfbb4ce70e84) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6d...codex/g6e) | 已上传源码节点 |
-| G6f | [`codex/g6f`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6f) | G6e | 贝叶斯多目标优化与独立复核 | [`941e658`](https://github.com/s1encisi/culab-copper-workbench/commit/941e6585e6e2ad5ac7c3e3ed197f3be7906a648f) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6e...codex/g6f) | 已上传源码节点 |
-| G6g | [`codex/g6g`](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6g) | G6f | CatBoost、NGBoost、EBM、Cubist 与概率评分 | [`31d6cab`](https://github.com/s1encisi/culab-copper-workbench/commit/31d6cab4cf0db4aab7309cba94d350a5f3bc88af) | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/codex/g6f...codex/g6g) | 已上传源码节点 |
-
-G6g 本地另有归档说明提交 9765f3e，尚未上传。G1–G5a 沿用原提交；G5b–G6f 依据原阶段文件哈希恢复，原有审计记录保留在本地。
-
-## 后续本地阶段
-
-以下分支尚未上传，不提供尚不存在的 GitHub 分支链接。“研究验收通过”不表示默认模型已经替换。
-
-| 阶段分支 | 实际依赖节点 | 当前源码节点 | 内容与验收状态 |
+| 分支 | 实际继承基点 | 内容 | 本阶段差异 |
 | --- | --- | --- | --- |
-| `codex/g6h` | G6g · 9765f3e | `7addfb8` | BART 采样与便携推理；扩展采样仍有诊断不通过，未完成验收 |
-| `codex/g6i` | G6h · 7addfb8 | `8a846b4` | 符号回归与公式导出；独立研究验收通过 |
-| `codex/g6j` | G6i · 8a846b4 | `9cea2f9` | TabNet、FTTransformer、NODE 与匹配 MLP 对照；末个种子比较未完成；进程已停止，对照与验收待完成 |
-| `codex/g6k` | G6j · ce9bd72 | `96bd78f` | GRU、LSTM、因果 TCN；独立研究验收通过 |
-| `codex/g6l` | G6k · eb971c0；经 db7e771 合入 96bd78f | `65c2f5e` | TabPFN；五种子正式比较完成，保存工件回放验收未完成，进程已停止 |
-| `codex/g6m` | G6l · 966d5ed | `1cde3e3` | 文档知识、OCR、记忆、受控引用和可选重排；本地接口验收通过，真实模型与独立领域评估待完成 |
-| `codex/g6n` | G6m · 1cde3e3 | `1711b51` | 共享时序校准；正式比较及保存工件回放完成 |
-| `codex/g6n-release` | G6n · 33f7623；经 6ef5379 合入 1711b51 | `6ef5379` | 校准工件登记、影子回放与发布判定；接入验收通过，候选未通过质量门槛，未切换默认模型 |
-| `codex/g8` / 固定 `codex/g8-ui` | G6n release · 6ef5379 | 见固定分支 HEAD | 十工作区界面检查点；构建、权限摘要测试和三尺寸导航通过，完整功能验收仍在进行 |
-| G7（尚未建分支） | 实施时从所需已验收后端建立 | — | 领域适配与独立对照评估尚未实施 |
+| [codex/g1](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g1) | 34933e0 | 数据、时间边界与事件证据 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/34933e0308e7fda71e6cc3807302cbb674c97bf0...codex/g1) |
+| [codex/g2a](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g2a) | d2ea1eb | 模型注册与固定协议比较 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/d2ea1eb873e989b41feb5b70c46cf60965dd1b7d...codex/g2a) |
+| [codex/g2b](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g2b) | 24949dd | 优化器注册与统一评价 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/24949ddfa2b497e4287753823d798833e175f58d...codex/g2b) |
+| [codex/g3](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g3) | 0a86817 | 研究对话、权限和任务恢复 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/0a868173f88566cefd4116823a44ec9d4fc63ef6...codex/g3) |
+| [codex/g4](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g4) | 80b85e3 | Mock 控制、审批与回读 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/80b85e3f482438e8017793fdd65ba4b317099ada...codex/g4) |
+| [codex/g5a](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5a) | e4c5ef5 | 成熟标签评价与影子路由 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/e4c5ef54c4cd443835590e835479822fcec3d947...codex/g5a) |
+| [codex/g5b](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5b) | 27923fd | 嵌套集成与时间块研究 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/27923fdd31a46a161038ca5fa100c4a36b26c748...codex/g5b) |
+| [codex/g5c](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5c) | 37f47c2 | 模型工件、发布与回退 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/37f47c22dbcba68b40d94169a2ce13b1a5a7a6f0...codex/g5c) |
+| [codex/g5d](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g5d) | a0ba976 | 优化器组合与配对比较 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/a0ba976e6f2f6b84f160ec0958210935f3a46cef...codex/g5d) |
+| [codex/g6a](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6a) | 1c46bf1 | 经典预测方法 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/1c46bf1083f401c9455d4b3d1ed06c1c2ad544b8...codex/g6a) |
+| [codex/g6b](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6b) | 19bcef6 | 统计与事件序列方法 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/19bcef6d7ba497bfe396a1e408129d4f90bc886d...codex/g6b) |
+| [codex/g6c](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6c) | 6149b91 | pymoo 方法扩展 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/6149b910993013aa3864a11942482c925b143582...codex/g6c) |
+| [codex/g6d](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6d) | 00f231e | Platypus 方法扩展 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/00f231ed0975551c9c3de2918910129eb3d694a1...codex/g6d) |
+| [codex/g6e](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6e) | 79f75c7 | HypE 与标量化 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/79f75c7946f26de8646f8187c3dd626627bd762f...codex/g6e) |
+| [codex/g6f](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6f) | 0d4d3e5 | 贝叶斯多目标优化 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/0d4d3e5a9d09a582d978055fe887bfbb4ce70e84...codex/g6f) |
+| [codex/g6g](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6g) | 941e658 | 专门化预测与概率评分 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/941e6585e6e2ad5ac7c3e3ed197f3be7906a648f...codex/g6g) |
+| [codex/g6h](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6h) | 9765f3e | BART 与采样诊断 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/9765f3e230169d2f474e91a8976d8e6d91206a3e...codex/g6h) |
+| [codex/g6i](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6i) | 7addfb8 | 符号回归与公式导出 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/7addfb856da3a78d101599054de76c993c978870...codex/g6i) |
+| [codex/g6j](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6j) | 8a846b4 | 表格神经模型与选择性恢复 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/8a846b4e7f3cbc7faf27a0702ab6294e3d39cd75...codex/g6j) |
+| [codex/g6k](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6k) | ce9bd72 | GRU、LSTM、因果 TCN | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/ce9bd720ec9aadef572dbb2678ed3f24a8ea35bc...codex/g6k) |
+| [codex/g6l](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6l) | 96bd78f | TabPFN 与数值回放 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/96bd78fdbc3e49e5962a5107081959bb606acf5e...codex/g6l) |
+| [codex/g6m](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6m) | 966d5ed | 文档、OCR、记忆与受控 RAG | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/966d5ed972899ffa99831a3bb19d0c2302080a0a...codex/g6m) |
+| [codex/g6n](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6n) | 1cde3e3 | 共享时序校准 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/1cde3e3f59777a22da17edfe84497a9d3f2e7d53...codex/g6n) |
+| [codex/g6n-release](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6n-release) | 1711b51 | 校准工件生命周期 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/1711b51753c8b6a4c06b6d6f9ce36e19286fe56a...codex/g6n-release) |
+| [codex/g8](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g8) | 6ef5379 | 十工作区与模型流程 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/6ef537990853078805078d2e4b5914ec86472558...codex/g8) |
+| [codex/g8-review-20260915](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g8-review-20260915) | f0e9283 | 四项已复现缺陷修复 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/f0e92836be7667cbd07e7485d139fa1045433d07...codex/g8-review-20260915) |
 
-## 每项功能的固定检查点
+## 固定功能检查点
 
-| 固定分支 | 继承节点 | 独立改动 | 源码提交 |
-| --- | --- | --- | --- |
-| `codex/g6m-core` | G6l · 966d5ed | 文档登记、结构解析、本地混合检索 | `b3e0951` |
-| `codex/g6m-ocr` | G6m core | 离线 OCR、页图定位、解析修订与审核 | `3edf0f9` |
-| `codex/g6m-memory` | G6m OCR | 权威会话记忆、本地引用与缓存失效 | `a658297` |
-| `codex/g6m-rag` | G6m memory；保留导航提交 | 正文授权、逐片段引用与派生回答清理 | `ccc3dc6` |
-| `codex/g6m-rerank` | G6m RAG | 可选本地重排与逐条规则解析 | `1cde3e3` |
-| `codex/g6l-replay` | G6l · 966d5ed | TabPFN 专属数值回放精度规则 | `65c2f5e` |
-| `codex/g8-ui` | G6n release · 6ef5379 | 十工作区导航、知识/模型操作界面、任务与费用摘要 | 固定分支 HEAD |
+| 分支 | 提交 | 内容 |
+| --- | --- | --- |
+| [codex/g6m-core](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6m-core) | [b3e0951](https://github.com/s1encisi/culab-copper-workbench/commit/b3e0951e1a104c858f16d01c6ba98c0a1ca3048f) | 文档登记、结构解析与混合检索 |
+| [codex/g6m-ocr](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6m-ocr) | [3edf0f9](https://github.com/s1encisi/culab-copper-workbench/commit/3edf0f9c788ad5bc6a3d7d40815281e80b29074b) | OCR 与解析修订 |
+| [codex/g6m-memory](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6m-memory) | [a658297](https://github.com/s1encisi/culab-copper-workbench/commit/a658297e8f0f59506cf3b9d58c95ed1640f68a2d) | 权威记忆与引用 |
+| [codex/g6m-rag](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6m-rag) | [ccc3dc6](https://github.com/s1encisi/culab-copper-workbench/commit/ccc3dc604e85538460d42638cced440fc0262525) | 正文授权、引用与派生回答清理 |
+| [codex/g6m-rerank](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6m-rerank) | [1cde3e3](https://github.com/s1encisi/culab-copper-workbench/commit/1cde3e3f59777a22da17edfe84497a9d3f2e7d53) | 可选重排与条款解析 |
+| [codex/g6l-replay](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6l-replay) | [65c2f5e](https://github.com/s1encisi/culab-copper-workbench/commit/65c2f5ed5d090c364795002d625c697531d940a6) | TabPFN 数值回放精度 |
+| [codex/g8-ui](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g8-ui) | [a04d31c](https://github.com/s1encisi/culab-copper-workbench/commit/a04d31c432f32046e231a62880c140b442e0c2ac) | 十工作区初始界面 |
+| [codex/g8-models-checkpoint](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g8-models-checkpoint) | [f0e9283](https://github.com/s1encisi/culab-copper-workbench/commit/f0e92836be7667cbd07e7485d139fa1045433d07) | 模型生命周期界面 |
 
-固定分支保留该次改动的终点。后续改动提交到阶段工作分支，并按功能新增检查点，不覆盖已有检查点。
+## 交付分支的合并关系
 
-## 交叉依赖与待合并修正
+交付分支从 G8 复查节点 aeba226 建立，通过明确合并纳入 G6j 的恢复工具 9cea2f9 与 G6l 的回放修正 65c2f5e，随后增加中断状态处理、公开演示和展示材料。
 
-```mermaid
-flowchart LR
-  Baseline["main · 34933e0"] --> Early["G1 → G2a → G2b → G3 → G4"]
-  Early --> Mid["G5a → G5b → G5c → G5d"]
-  Mid --> Models["G6a → G6b → G6c → G6d → G6e → G6f → G6g"]
-  Models --> H["G6h"] --> I["G6i"] --> J0["G6j · ce9bd72"]
-  J0 --> Jfix["G6j 恢复工具 · 9cea2f9"]
-  J0 --> K0["G6k · eb971c0"]
-  K0 --> Kfix["G6k 回放修正 · 96bd78f"]
-  K0 --> L0["G6l 初版"]
-  Kfix --> MergeL["合并 · db7e771"]
-  L0 --> MergeL
-  MergeL --> L["G6l · 966d5ed"]
-  L --> Lfix["G6l 回放修正 · 65c2f5e"]
-  L --> M["G6m 文档知识"] --> N0["G6n · 33f7623"]
-  N0 --> Nfix["G6n 运行时修正 · 1711b51"]
-  N0 --> Release["G6n 发布接入 · e0166a5"]
-  Nfix --> MergeN["合并 · 6ef5379"]
-  Release --> MergeN
-  MergeN --> UI["G8 UI 固定检查点"]
-```
+这些合并保留原阶段来源，不改变 main，也不把研究候选自动批准为默认模型。
 
-G6j 的恢复工具 9cea2f9 和 G6l 的回放修正 65c2f5e 尚未合入 G8 所继承的源码。这些修正留在各自分支，避免改变正在验收的实验源码；后续集成以明确的合并提交记录。图中的 G6m 还可按上表五个功能检查点展开。
+## 本地保留的历史
 
-## 查看差异与后续规则
-
-- 累计已集成升级：比较 main 与 codex/system-upgrade。
-- 单阶段改动：比较该阶段的“实际依赖节点”与阶段分支。存在分叉时，使用表中固定提交作为基点，避免把另一条分支后加的改动混入比较。
-- G8 界面检查点：比较 codex/g6n-release 与 codex/g8-ui。
-- 已共享的提交保持原样。修正使用新提交；并行分支使用合并提交，保留各自来源。
-- 阶段验收完成并合入汇总分支后，再更新汇总入口。main 继续保留升级前的状态。
-
-## 验证与上传边界
-
-G8 UI 检查点已通过 TypeScript 检查、Vite 生产构建及新增工作区接口的账号隔离测试。1440×1000、1920×1000、390×844 下的十工作区导航均无页面横向溢出、框架错误覆盖层或浏览器错误。此前还执行了本地预测、训练、快速优化候选保存、合成文档检索和合成 Mock 审批回读流程。付费诊断未执行，领域适配服务未接入，模型生命周期与文档权限的完整界面验收仍待完成；这些限制不被标记为验收通过。
-
-Excel、行级数据、模型、数据库、访问凭据、内部文档、截图和验收原始记录继续留在被忽略的本地目录。本文件只记录通用功能、源码节点和验证范围。
-
-远端推送目前受自动审批限制：对 G6g 归档提交及后续源码的上传尚未获准。本地分支已保留，未绕过该限制上传；解除后再按准确分支清单同步，最后重新核对远端引用。
+refs/local-only 和 refs/codex 下的原始备份、工作快照保留在本机，不属于公开阶段分支，不推送。公开同步只使用审查后的 refs/heads 引用；不使用 mirror、强推或历史重写。

@@ -3,6 +3,7 @@ import json
 
 from fastapi import APIRouter,Request
 from copper_mvp.access import PROJECT
+from copper_mvp.model_comparisons import observed_job_state
 from copper_mvp.common import APP_VERSION,WorkbenchError,utc_now
 
 
@@ -55,7 +56,7 @@ def workspace_router():
                            "elapsed_ms":row.get("duration_ms"),"error":row.get("error")})
         for folder,kind in (("model_comparisons","model_comparison"),("optimizer_comparisons","optimizer_comparison"),("calibration_studies","calibration")):
             for path in sorted((wb.root/folder).glob("*/state.json"),key=lambda p:p.stat().st_mtime,reverse=True)[:60]:
-                state=json.loads(path.read_text(encoding="utf-8"))
+                state=observed_job_state(json.loads(path.read_text(encoding="utf-8")))
                 values.append({"id":state.get("run_id",state.get("id",path.parent.name)),"kind":kind,
                                "title":state.get("request",{}).get("request_key",path.parent.name),
                                "status":state["status"],"created_at":state.get("created_at",""),

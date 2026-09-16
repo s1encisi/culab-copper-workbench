@@ -45,6 +45,14 @@ def process_alive(pid):
         return True
 
 
+def observed_job_state(state):
+    """Report a stopped worker without rewriting the saved experiment record."""
+    if state.get("status") in ("queued","running") and state.get("owner_pid") is not None and not process_alive(state["owner_pid"]):
+        return {**state,"status":"interrupted","error":{"code":"WORKER_NOT_RUNNING",
+                "message":"原运行进程已停止；已保留原始记录和工件。"}}
+    return state
+
+
 class ComparisonService:
     def __init__(self, root: Path, data):
         self.root = Path(root)

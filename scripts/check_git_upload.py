@@ -14,7 +14,7 @@ PRIVATE_DIRS = {
     '.codex', '.agents', '.agent', '.github-local', 'data', 'models',
     'contracts', 'provenance', 'docs', 'skills', 'runs', 'outputs',
     'artifacts', 'node_modules', 'dist', 'build', '__pycache__',
-    '.pytest_cache', '.pytest_tmp', '.venv', '.idea', '.vscode',
+    '.pytest_cache', '.pytest_tmp', '.venv', '.idea', '.vscode', '.playwright-cli',
 }
 PRIVATE_ROOT_FILES = {'MANIFEST.sha256', '文件清单.md'}
 PRIVATE_EXTENSIONS = {
@@ -23,7 +23,7 @@ PRIVATE_EXTENSIONS = {
     '.pkl', '.pickle', '.pt', '.pth', '.onnx', '.db', '.sqlite', '.sqlite3',
     '.doc', '.docx', '.pdf', '.ppt', '.pptx', '.zip', '.7z', '.rar',
     '.tar', '.gz', '.bundle', '.pem', '.key', '.p12', '.pfx', '.kdbx',
-    '.log', '.pyc', '.tsbuildinfo',
+    '.log', '.pyc', '.tsbuildinfo', '.dpapi',
 }
 RULES = {
     'private-key': re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'),
