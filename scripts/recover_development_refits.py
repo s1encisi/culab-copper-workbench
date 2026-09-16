@@ -25,7 +25,7 @@ if __name__=="__main__":
     assert not process_alive(state.get("owner_pid"))
     manifest,protocol=read_training(source)
     data=DataRepository();assert source_signature(data)==manifest["source"]
-    methods=protocol["request"]["methods"];folds=[f["fold_id"] for f in protocol["folds"]]
+    methods=protocol["request"]["methods"];folds=[f["fold_id"] for f in protocol["folds"] if f["fold_id"]!="DEVELOPMENT"]
     completed={(a["fold_id"],a["method_id"]) for a in manifest["artifacts"] if a["status"]=="completed"}
     assert {(f,m) for f in folds for m in methods}.issubset(completed)
     for artifact in manifest["artifacts"]:

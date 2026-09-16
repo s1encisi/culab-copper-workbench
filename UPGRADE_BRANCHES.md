@@ -7,7 +7,7 @@
 - main：固定在 34933e0 的升级前基线，未合入升级内容。
 - codex/portfolio-release-20260916：完整交付源码、公开演示和项目展示入口。
 - codex/system-upgrade：综合升级入口，快进到交付节点。
-- 实验未完成项与前置条件见 [CLOSEOUT.md](CLOSEOUT.md)。
+- 本轮收尾、候选处置与后续条件见 [CLOSEOUT.md](CLOSEOUT.md)。
 
 ## 阶段分支
 
@@ -41,6 +41,17 @@
 | [codex/g6n-release](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g6n-release) | 1711b51 | 校准工件生命周期 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/1711b51753c8b6a4c06b6d6f9ce36e19286fe56a...codex/g6n-release) |
 | [codex/g8](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g8) | 6ef5379 | 十工作区与模型流程 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/6ef537990853078805078d2e4b5914ec86472558...codex/g8) |
 | [codex/g8-review-20260915](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g8-review-20260915) | f0e9283 | 四项已复现缺陷修复 | [查看](https://github.com/s1encisi/culab-copper-workbench/compare/f0e92836be7667cbd07e7485d139fa1045433d07...codex/g8-review-20260915) |
+
+## 本轮收尾分支
+
+| 分支 | 继承节点 | 内容 |
+| --- | --- | --- |
+| [codex/g7-domain-evaluation](https://github.com/s1encisi/culab-copper-workbench/tree/codex/g7-domain-evaluation) | 原交付 525ce9c | 提示词/RAG 评测服务、工作区、真实调用记录及上下文摘要修复 |
+| [codex/upgrade-closeout-20260916](https://github.com/s1encisi/culab-copper-workbench/tree/codex/upgrade-closeout-20260916) | G7 889df56 | 候选采用处置、恢复脚本小修复及 README/演示/面试材料更新 |
+
+[G7 改动](https://github.com/s1encisi/culab-copper-workbench/compare/525ce9c8b1c48241a36a1c2efca29f7216bd4659...codex/g7-domain-evaluation) · [收尾改动](https://github.com/s1encisi/culab-copper-workbench/compare/889df56...codex/upgrade-closeout-20260916)
+
+上述节点依次快进到 codex/system-upgrade 与默认交付分支；main 保持原基线。
 
 ## 固定功能检查点
 
