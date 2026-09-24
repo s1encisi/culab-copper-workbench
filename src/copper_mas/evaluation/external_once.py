@@ -7,19 +7,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import json
 import math
 import os
-from pathlib import Path
 import shutil
 import time
-from typing import Any, Iterable, Literal
-from uuid import uuid4
+from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
+import yaml
 from pydantic import BaseModel, ConfigDict, Field
 from sklearn.metrics import (
     mean_absolute_error,
@@ -27,7 +28,6 @@ from sklearn.metrics import (
     median_absolute_error,
     r2_score,
 )
-import yaml
 
 from copper_mas.agents.runtime import fixed_offline_plan, run_offline_graph
 from copper_mas.contracts.cards import (
@@ -49,7 +49,6 @@ from copper_mas.evaluation.transaction import (
     verify_runtime_freeze_manifest,
 )
 from copper_mas.models.predictors import load_selected_predictor
-
 
 EXPECTED_OUTCOME_COLUMNS = (
     "schema_version",
@@ -134,9 +133,7 @@ class ExternalEvaluationProtocolV1(BaseModel):
     expected_pair_count: int = Field(gt=0)
     external_build_manifest_path: str
     external_build_manifest_sha256: str
-    primary_metrics: tuple[
-        Literal["MAE", "RMSE", "R2", "MEDAE", "P90AE", "BIAS"], ...
-    ]
+    primary_metrics: tuple[Literal["MAE", "RMSE", "R2", "MEDAE", "P90AE", "BIAS"], ...]
     metric_population: Literal["PASSED_AND_AUDIT_PASSED_ONLY"]
     operational_population: Literal["ALL_682_PREREGISTERED_PAIRS"]
     outcome_missing_policy: Literal["FAIL_CLOSED"]
@@ -148,9 +145,7 @@ class ExternalEvaluationProtocolV1(BaseModel):
     lead_time_bin_labels: tuple[str, ...]
     minimum_metric_sample_count: int = Field(default=1, gt=0)
     bootstrap: BootstrapProtocolV1
-    prediction_interval_status: Literal[
-        "NOT_APPLICABLE_NO_FROZEN_INTERVAL_MODEL"
-    ]
+    prediction_interval_status: Literal["NOT_APPLICABLE_NO_FROZEN_INTERVAL_MODEL"]
     interval_coverage: Literal["NA"]
     llm_calls_allowed: Literal[False]
     network_calls_allowed: Literal[False]
@@ -184,19 +179,14 @@ def load_external_evaluation_protocol(
     return protocol
 
 
-def _require_columns(
-    frame: pd.DataFrame, required: Iterable[str], *, source: str, exact: bool = False
-) -> None:
+def _require_columns(frame: pd.DataFrame, required: Iterable[str], *, source: str, exact: bool = False) -> None:
     required_set = set(required)
     actual = set(frame.columns)
     missing = sorted(required_set - actual)
     if missing:
         raise ValueError(f"{source} 缺少必要字段: {missing}")
     if exact and actual != required_set:
-        raise ValueError(
-            f"{source} 字段集不等于冻结协议: "
-            f"多余={sorted(actual - required_set)}"
-        )
+        raise ValueError(f"{source} 字段集不等于冻结协议: 多余={sorted(actual - required_set)}")
 
 
 def _as_bool(series: pd.Series, *, column: str) -> pd.Series:
@@ -251,9 +241,7 @@ def _make_admission(raw: pd.Series) -> AsOfAdmissionCardV2:
     )
 
 
-def _make_request(
-    *, admission: AsOfAdmissionCardV2, feature_row: dict[str, Any], run_id: str
-) -> ForecastRequestV2:
+def _make_request(*, admission: AsOfAdmissionCardV2, feature_row: dict[str, Any], run_id: str) -> ForecastRequestV2:
     decision_at = admission.decision_at
     observations = ObservationCardV2(
         origin_event_id=admission.origin_event_id,
@@ -294,9 +282,7 @@ def _json_cell(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
-def _verify_declared_artifact(
-    *, external_dir: Path, manifest: dict[str, Any], relative: str
-) -> None:
+def _verify_declared_artifact(*, external_dir: Path, manifest: dict[str, Any], relative: str) -> None:
     metadata = (manifest.get("artifacts") or {}).get(relative)
     if not isinstance(metadata, dict) or not metadata.get("sha256"):
         raise ValueError(f"外部构建清单缺少工件: {relative}")
@@ -327,9 +313,7 @@ def _load_non_outcome_inputs(
         "external_evaluation_index_v2.csv",
     )
     for relative in consumed:
-        _verify_declared_artifact(
-            external_dir=paths.external_dir, manifest=manifest, relative=relative
-        )
+        _verify_declared_artifact(external_dir=paths.external_dir, manifest=manifest, relative=relative)
 
     core = pd.read_csv(paths.external_dir / consumed[0], low_memory=False)
     admissions = pd.read_csv(paths.external_dir / consumed[1], low_memory=False)
@@ -355,9 +339,7 @@ def _load_non_outcome_inputs(
         if frame[key].duplicated().any():
             raise ValueError(f"{name} 主键不唯一: {key}")
 
-    eligibility["evaluation_eligible"] = _as_bool(
-        eligibility["evaluation_eligible"], column="evaluation_eligible"
-    )
+    eligibility["evaluation_eligible"] = _as_bool(eligibility["evaluation_eligible"], column="evaluation_eligible")
     external_index["core_process_4_of_7_ready"] = _as_bool(
         external_index["core_process_4_of_7_ready"],
         column="core_process_4_of_7_ready",
@@ -366,9 +348,7 @@ def _load_non_outcome_inputs(
         raise ValueError("评价资格账本不是预注册的相邻对数")
     if not eligibility["evaluation_eligible"].all():
         raise ValueError("预注册的 682 相邻对中出现不合格样本")
-    eligibility["decision_at"] = pd.to_datetime(
-        eligibility["decision_at"], errors="raise", format="mixed"
-    )
+    eligibility["decision_at"] = pd.to_datetime(eligibility["decision_at"], errors="raise", format="mixed")
     eligibility["target_recorded_at"] = pd.to_datetime(
         eligibility["target_recorded_at"], errors="raise", format="mixed"
     )
@@ -410,9 +390,7 @@ def _load_non_outcome_inputs(
         raise ValueError("外部评价输入合并后行数异常")
     if not sample["partition_role"].eq("EXTERNAL_TEMPORAL_HOLDOUT").all():
         raise ValueError("外部评价样本分区角色异常")
-    return manifest, sample.sort_values(
-        ["decision_at_eligibility", "pair_id"], kind="mergesort"
-    ).reset_index(drop=True)
+    return manifest, sample.sort_values(["decision_at_eligibility", "pair_id"], kind="mergesort").reset_index(drop=True)
 
 
 def _run_frozen_predictions(
@@ -469,9 +447,7 @@ def _run_frozen_predictions(
             admission_payload = series.copy()
             admission_payload["decision_at"] = series["decision_at_admission"]
             status_column = (
-                "admission_status_admission"
-                if "admission_status_admission" in series.index
-                else "admission_status"
+                "admission_status_admission" if "admission_status_admission" in series.index else "admission_status"
             )
             admission_payload["admission_status"] = series[status_column]
             admission = _make_admission(admission_payload)
@@ -491,9 +467,7 @@ def _run_frozen_predictions(
             }
             feature_row["origin_event_id"] = admission.origin_event_id
             feature_row["decision_at"] = admission.decision_at
-            request = _make_request(
-                admission=admission, feature_row=feature_row, run_id=run_id
-            )
+            request = _make_request(admission=admission, feature_row=feature_row, run_id=run_id)
             event_run_id = f"{run_id}::{pair_id}"
             plan = fixed_offline_plan(
                 run_id=event_run_id,
@@ -574,9 +548,7 @@ def _strata_frames(
         for label in sorted(modes.unique()):
             frames.append(("PROCESS_MODE", label, evaluated.loc[modes == label]))
     if "COVERAGE" in protocol.fixed_strata:
-        coverage = np.where(
-            evaluated["coverage_ready_4_of_7"], "READY_4_OF_7", "NOT_READY_4_OF_7"
-        )
+        coverage = np.where(evaluated["coverage_ready_4_of_7"], "READY_4_OF_7", "NOT_READY_4_OF_7")
         for label in ("READY_4_OF_7", "NOT_READY_4_OF_7"):
             frames.append(("COVERAGE", label, evaluated.loc[coverage == label]))
     return frames
@@ -590,9 +562,7 @@ def score_external_predictions(
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """只负责已冻结预测的事后计分；不接收模型或特征。"""
 
-    _require_columns(
-        outcomes, EXPECTED_OUTCOME_COLUMNS, source="sealed outcome", exact=True
-    )
+    _require_columns(outcomes, EXPECTED_OUTCOME_COLUMNS, source="sealed outcome", exact=True)
     if len(outcomes) != protocol.expected_pair_count:
         raise ValueError("封存真值行数与预注册协议不一致")
     if outcomes["pair_id"].duplicated().any():
@@ -612,9 +582,7 @@ def score_external_predictions(
     if len(evaluated) != protocol.expected_pair_count or not evaluated["_merge"].eq("both").all():
         raise ValueError("预测与封存真值未完成 1:1 匹配")
     evaluated = evaluated.drop(columns="_merge")
-    evaluated["decision_at"] = pd.to_datetime(
-        evaluated["decision_at"], errors="raise", format="mixed"
-    )
+    evaluated["decision_at"] = pd.to_datetime(evaluated["decision_at"], errors="raise", format="mixed")
     evaluated["cu_error"] = evaluated["predicted_cu_g_l"] - evaluated["target_cu_g_l"]
     evaluated["as_error"] = evaluated["predicted_as_mg_l"] - evaluated["target_as_mg_l"]
     evaluated["cu_absolute_error"] = evaluated["cu_error"].abs()
@@ -624,8 +592,7 @@ def score_external_predictions(
     operational_rows: list[dict[str, Any]] = []
     for dimension, stratum, frame in _strata_frames(evaluated, protocol):
         passed = frame.loc[
-            frame["status"].eq("PASSED")
-            & frame["audit_passed"].eq(True)  # noqa: E712
+            frame["status"].eq("PASSED") & frame["audit_passed"].eq(True)  # noqa: E712
         ]
         attempted = len(frame)
         operational_rows.append(
@@ -636,24 +603,14 @@ def score_external_predictions(
                 "passed_count": int(len(passed)),
                 "abstained_count": int(frame["status"].eq("ABSTAINED").sum()),
                 "failed_count": int(frame["status"].eq("FAILED").sum()),
-                "warning_event_count": int(
-                    frame["mode_warnings"].fillna("[]").ne("[]").sum()
-                ),
+                "warning_event_count": int(frame["mode_warnings"].fillna("[]").ne("[]").sum()),
                 "pass_rate": float(len(passed) / attempted) if attempted else np.nan,
-                "abstention_rate": float(frame["status"].eq("ABSTAINED").mean())
+                "abstention_rate": float(frame["status"].eq("ABSTAINED").mean()) if attempted else np.nan,
+                "failure_rate": float(frame["status"].eq("FAILED").mean()) if attempted else np.nan,
+                "p50_latency_ms": float(pd.to_numeric(frame["total_latency_ms"], errors="coerce").quantile(0.5))
                 if attempted
                 else np.nan,
-                "failure_rate": float(frame["status"].eq("FAILED").mean())
-                if attempted
-                else np.nan,
-                "p50_latency_ms": float(
-                    pd.to_numeric(frame["total_latency_ms"], errors="coerce").quantile(0.5)
-                )
-                if attempted
-                else np.nan,
-                "p95_latency_ms": float(
-                    pd.to_numeric(frame["total_latency_ms"], errors="coerce").quantile(0.95)
-                )
+                "p95_latency_ms": float(pd.to_numeric(frame["total_latency_ms"], errors="coerce").quantile(0.95))
                 if attempted
                 else np.nan,
             }
@@ -673,7 +630,7 @@ def score_external_predictions(
                     passed[prediction].to_numpy(dtype=float),
                 )
             else:
-                values = {metric: np.nan for metric in protocol.primary_metrics}
+                values = dict.fromkeys(protocol.primary_metrics, np.nan)
             row.update({metric.lower(): values[metric] for metric in protocol.primary_metrics})
             row["interval_coverage"] = np.nan
             row["interval_status"] = protocol.prediction_interval_status
@@ -686,14 +643,12 @@ def _moving_block_bootstrap_ci(
     evaluated: pd.DataFrame,
     protocol: ExternalEvaluationProtocolV1,
 ) -> pd.DataFrame:
-    passed = evaluated.loc[
-        evaluated["status"].eq("PASSED") & evaluated["audit_passed"].eq(True)
-    ].sort_values(["decision_at", "pair_id"], kind="mergesort")
+    passed = evaluated.loc[evaluated["status"].eq("PASSED") & evaluated["audit_passed"].eq(True)].sort_values(
+        ["decision_at", "pair_id"], kind="mergesort"
+    )
     n = len(passed)
     if n < 2:
-        return pd.DataFrame(
-            columns=["target_name", "metric", "lower", "upper", "method", "replicates"]
-        )
+        return pd.DataFrame(columns=["target_name", "metric", "lower", "upper", "method", "replicates"])
     config = protocol.bootstrap
     block = min(config.block_length_events, n)
     rng = np.random.default_rng(config.random_seed)
@@ -705,9 +660,7 @@ def _moving_block_bootstrap_ci(
         blocks_needed = math.ceil(n / block)
         for _ in range(config.replicates):
             starts = rng.integers(0, n, size=blocks_needed)
-            indices = np.concatenate(
-                [np.mod(np.arange(start, start + block), n) for start in starts]
-            )[:n]
+            indices = np.concatenate([np.mod(np.arange(start, start + block), n) for start in starts])[:n]
             values = _metric_values(truth[indices], estimate[indices])
             for metric in protocol.primary_metrics:
                 if np.isfinite(values[metric]):
@@ -718,12 +671,8 @@ def _moving_block_bootstrap_ci(
                 {
                     "target_name": target,
                     "metric": metric,
-                    "lower": float(np.percentile(values, config.lower_percentile))
-                    if len(values)
-                    else np.nan,
-                    "upper": float(np.percentile(values, config.upper_percentile))
-                    if len(values)
-                    else np.nan,
+                    "lower": float(np.percentile(values, config.lower_percentile)) if len(values) else np.nan,
+                    "upper": float(np.percentile(values, config.upper_percentile)) if len(values) else np.nan,
                     "method": config.method,
                     "block_length_events": block,
                     "replicates": config.replicates,
@@ -740,9 +689,7 @@ def _write_json(path: Path, payload: dict[str, Any]) -> None:
     )
 
 
-def _render_report(
-    *, metrics: pd.DataFrame, operational: pd.DataFrame, protocol: ExternalEvaluationProtocolV1
-) -> str:
+def _render_report(*, metrics: pd.DataFrame, operational: pd.DataFrame, protocol: ExternalEvaluationProtocolV1) -> str:
     overall = metrics.loc[metrics["dimension"].eq("OVERALL")]
     operations = operational.loc[operational["dimension"].eq("OVERALL")].iloc[0]
     lines = [
@@ -796,10 +743,7 @@ def header_only_real_preflight(
     protocol = load_external_evaluation_protocol(protocol_file)
     gate = load_external_release_gate(gate_file)
     manifest_path = root / protocol.external_build_manifest_path
-    manifest_hash_ok = (
-        sha256_file(manifest_path).lower()
-        == protocol.external_build_manifest_sha256.lower()
-    )
+    manifest_hash_ok = sha256_file(manifest_path).lower() == protocol.external_build_manifest_sha256.lower()
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     header_requirements: dict[str, tuple[set[str], bool]] = {
@@ -855,17 +799,14 @@ def header_only_real_preflight(
         and review_payload.get("accepted_for_external_release") is True
         and review_decision_bound
         and workbook.is_file()
-        and sha256_file(workbook).lower()
-        == str(review_payload.get("source_workbook_sha256") or "").lower()
+        and sha256_file(workbook).lower() == str(review_payload.get("source_workbook_sha256") or "").lower()
         and bool(freezes.human_review_workbook_sha256)
-        and sha256_file(workbook).lower()
-        == str(freezes.human_review_workbook_sha256 or "").lower()
+        and sha256_file(workbook).lower() == str(freezes.human_review_workbook_sha256 or "").lower()
     )
     selected_hash_ok = bool(
         selected.is_file()
         and freezes.selected_model_manifest_sha256
-        and sha256_file(selected).lower()
-        == freezes.selected_model_manifest_sha256.lower()
+        and sha256_file(selected).lower() == freezes.selected_model_manifest_sha256.lower()
     )
     graph_hash_ok = bool(
         graph.is_file()
@@ -911,7 +852,7 @@ def header_only_real_preflight(
         runtime_verified_file_count = int(runtime_evidence["verified_file_count"])
     result = {
         "preflight_id": "EXTERNAL_2026_HEADER_ONLY_PREFLIGHT_V1",
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "formal_evaluation_started": False,
         "claim_created": False,
         "sealed_outcome_rows_read": 0,
@@ -921,12 +862,8 @@ def header_only_real_preflight(
         "gate_status": gate.status,
         "expected_event_count": protocol.expected_event_count,
         "expected_pair_count": protocol.expected_pair_count,
-        "manifest_declared_event_count": int(
-            (manifest.get("counts") or {}).get("target_events", -1)
-        ),
-        "manifest_declared_pair_count": int(
-            (manifest.get("counts") or {}).get("strict_adjacent_pairs", -1)
-        ),
+        "manifest_declared_event_count": int((manifest.get("counts") or {}).get("target_events", -1)),
+        "manifest_declared_pair_count": int((manifest.get("counts") or {}).get("strict_adjacent_pairs", -1)),
         "manifest_hash_ok": manifest_hash_ok,
         "selected_model_hash_ok": selected_hash_ok,
         "agent_graph_hash_ok": graph_hash_ok,
@@ -934,9 +871,7 @@ def header_only_real_preflight(
         "manual_review_decision_hash_bound_in_gate": review_decision_bound,
         "timing_contract_hash_bound_in_gate": timing_bound,
         "core_feature_contract_hash_bound_in_gate": core_contract_bound,
-        "model_selection_protocol_hash_bound_in_gate": (
-            model_selection_protocol_bound
-        ),
+        "model_selection_protocol_hash_bound_in_gate": (model_selection_protocol_bound),
         "protocol_hash_bound_in_gate": protocol_bound,
         "evaluator_code_hash_bound_in_gate": evaluator_bound,
         "runtime_manifest_hash_bound_in_gate": runtime_manifest_bound,
@@ -969,9 +904,7 @@ def header_only_real_preflight(
     return result
 
 
-def run_external_evaluation_once(
-    *, paths: ExternalEvaluationPaths, run_id: str
-) -> dict[str, Any]:
+def run_external_evaluation_once(*, paths: ExternalEvaluationPaths, run_id: str) -> dict[str, Any]:
     """执行一次性外部评价。调用者不能覆盖样本数或指标。"""
 
     live = os.environ.get("COPPER_MAS_LIVE_CALLS", "false").strip().lower()
@@ -998,9 +931,7 @@ def run_external_evaluation_once(
         claimed = True
         gate = load_external_release_gate(paths.gate_path)
         manifest, sample = _load_non_outcome_inputs(paths=paths, protocol=protocol)
-        selected_path = paths.project_root / str(
-            gate.required_freezes.selected_model_manifest_path
-        )
+        selected_path = paths.project_root / str(gate.required_freezes.selected_model_manifest_path)
         predictions = _run_frozen_predictions(
             sample=sample,
             selected_manifest_path=selected_path,
@@ -1019,18 +950,12 @@ def run_external_evaluation_once(
         )
 
         # 从这一行状态转移之后，才允许对封存文件做任何正文读取或哈希。
-        mark_outcome_access_started(
-            gate_path=paths.gate_path, claim_path=paths.claim_path, run_id=run_id
-        )
-        assert_sealed_access_authorized(
-            gate_path=paths.gate_path, claim_path=paths.claim_path, run_id=run_id
-        )
+        mark_outcome_access_started(gate_path=paths.gate_path, claim_path=paths.claim_path, run_id=run_id)
+        assert_sealed_access_authorized(gate_path=paths.gate_path, claim_path=paths.claim_path, run_id=run_id)
         outcome_path = paths.external_dir / "sealed/outcome_ledger_v2.csv"
         sealed_hash = sha256_file(outcome_path)
         expected_sealed_hash = str(
-            ((manifest.get("artifacts") or {}).get("sealed/outcome_ledger_v2.csv") or {}).get(
-                "sha256", ""
-            )
+            ((manifest.get("artifacts") or {}).get("sealed/outcome_ledger_v2.csv") or {}).get("sha256", "")
         )
         if not expected_sealed_hash or sealed_hash.lower() != expected_sealed_hash.lower():
             raise ValueError("封存真值 SHA-256 与构建清单不一致")
@@ -1038,9 +963,7 @@ def run_external_evaluation_once(
         evaluated, metrics, operational = score_external_predictions(
             predictions=predictions, outcomes=outcomes, protocol=protocol
         )
-        confidence_intervals = _moving_block_bootstrap_ci(
-            evaluated=evaluated, protocol=protocol
-        )
+        confidence_intervals = _moving_block_bootstrap_ci(evaluated=evaluated, protocol=protocol)
 
         csv_outputs = {
             "external_event_prediction_audit_v1.csv": evaluated,
@@ -1058,19 +981,16 @@ def run_external_evaluation_once(
 
         primary = [prediction_path, *(staging / name for name in csv_outputs), report_path]
         hash_rows = [
-            {"artifact": path.name, "sha256": sha256_file(path), "size_bytes": path.stat().st_size}
-            for path in primary
+            {"artifact": path.name, "sha256": sha256_file(path), "size_bytes": path.stat().st_size} for path in primary
         ]
         hash_frame = pd.DataFrame(hash_rows).sort_values("artifact", kind="mergesort")
         hash_path = staging / "artifact_hashes_v1.csv"
         hash_frame.to_csv(hash_path, index=False, encoding="utf-8-sig")
-        overall_operations = operational.loc[
-            operational["dimension"].eq("OVERALL")
-        ].iloc[0]
+        overall_operations = operational.loc[operational["dimension"].eq("OVERALL")].iloc[0]
         run_manifest = {
             "run_id": run_id,
             "protocol_id": protocol.protocol_id,
-            "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+            "generated_at_utc": datetime.now(UTC).isoformat(),
             "duration_seconds": time.perf_counter() - started,
             "partition_role": protocol.partition_role,
             "expected_pair_count": protocol.expected_pair_count,

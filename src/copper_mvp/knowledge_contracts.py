@@ -1,8 +1,11 @@
 """Versioned document metadata; document text never grants execution authority."""
+
 from __future__ import annotations
 
-from typing import Literal, Annotated
+from typing import Annotated, Literal
+
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+
 from copper_mvp.access import PROJECT
 
 

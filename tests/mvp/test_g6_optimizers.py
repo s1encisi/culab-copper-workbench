@@ -13,8 +13,14 @@ from copper_mvp.optimizer_registry import LEGACY_OPTIMIZERS, OptimizerComparison
 
 @pytest.mark.parametrize("budget", [128, 257])
 def test_extended_algorithms_share_raw_problem_initial_points_and_total_budget(tmp_path, budget):
-    request = OptimizerComparisonRequest(request_key="extended", mode="benchmark", seeds=(17,),
-        total_budget=budget, seconds_per_run=120, optimizers=("NSGA-II",) + EXTENDED_OPTIMIZERS)
+    request = OptimizerComparisonRequest(
+        request_key="extended",
+        mode="benchmark",
+        seeds=(17,),
+        total_budget=budget,
+        seconds_per_run=120,
+        optimizers=("NSGA-II",) + EXTENDED_OPTIMIZERS,
+    )
     result = compare_optimizers(None, None, request, tmp_path)
     assert OptimizerComparisonRequest(request_key="default", mode="benchmark").optimizers == LEGACY_OPTIMIZERS
     assert len({r["initial_population_hash"] for r in result["results"]}) == 1
@@ -26,7 +32,7 @@ def test_extended_algorithms_share_raw_problem_initial_points_and_total_budget(t
         assert run["evaluations"]["search"] == budget - max(16, budget // 8) - 65
         X = frame[["x0", "x1"]].to_numpy()
         assert np.all((X >= 0) & (X <= 3))
-        np.testing.assert_allclose(frame[["f0", "f1"]], np.column_stack(((X * X).sum(1), ((X - 2)**2).sum(1))))
+        np.testing.assert_allclose(frame[["f0", "f1"]], np.column_stack(((X * X).sum(1), ((X - 2) ** 2).sum(1))))
         np.testing.assert_allclose(frame.g0, X.sum(1) - 3)
         front = np.array([[c["f1"], c["f2"]] for c in run["candidates"]]) / np.array(run["metric"]["scale"])
         previous, hv = 1.1, 0.0
@@ -59,22 +65,28 @@ def test_gde3_partial_batch_keeps_unvisited_parents_and_rejects_infeasible_trial
     algorithm = BudgetedGDE3(pop_size=4)
     problem = Problem(n_var=1, n_obj=2, n_ieq_constr=1, xl=0, xu=10)
     algorithm.setup(problem, termination=("n_eval", 128), seed=17)
-    algorithm.pop = Population.new(X=np.array([[0], [1], [2], [3]]), F=np.array([[0, 3], [1, 2], [2, 1], [3, 0]], dtype=float), G=-np.ones((4, 1)))
+    algorithm.pop = Population.new(
+        X=np.array([[0], [1], [2], [3]]), F=np.array([[0, 3], [1, 2], [2, 1], [3, 0]], dtype=float), G=-np.ones((4, 1))
+    )
     algorithm.trial_parent_indices = np.array([1, 3])
     trial = Population.new(X=np.array([[7], [8]]), F=np.array([[-100, -100], [2.5, -0.1]]), G=np.array([[1], [-1]]))
     algorithm._advance(trial)
     assert set(algorithm.pop.get("X")[:, 0]) == {0, 1, 2, 8}
+
 
 @pytest.mark.parametrize("name", ["C-TAEA", "MOEA-D"])
 def test_narrow_feasible_region_preserves_only_verified_candidates(tmp_path, name):
     from copper_mvp.contracts import RunRequest
     from copper_mvp.optimization_problem import build_problem
     from copper_mvp.optimizer_comparison import run_optimizer
+
     prepared = build_problem(None, None, RunRequest(task_type="optimize", mode="benchmark", request_key="thin"))
     original = prepared.evaluate
+
     def evaluate(X):
         F, _, details = original(X)
         return F, (np.abs(X.sum(axis=1) - 3) - 1e-7)[:, None], details
+
     prepared.evaluate = evaluate
     prepared.ref_F, prepared.ref_G, _ = evaluate(prepared.reference_x)
     prepared.reference_front = None
@@ -84,4 +96,3 @@ def test_narrow_feasible_region_preserves_only_verified_candidates(tmp_path, nam
     assert run["status"] == "feasible" and run["evaluations"]["search"] > 0
     assert run["igd_plus"] is None
     assert all(abs(sum(c["variables"].values()) - 3) <= 1.1e-7 for c in run["candidates"])
-

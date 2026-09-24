@@ -1,24 +1,25 @@
 """Project-scoped documents and atomic local hybrid indexes."""
+
 from __future__ import annotations
 
-from collections import Counter
-from contextlib import contextmanager
-from datetime import datetime, timezone
 import hashlib
 import json
 import math
-from pathlib import Path
 import re
 import sqlite3
 import threading
+from collections import Counter
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import quote
 
 import numpy as np
 
 from copper_mvp.common import WorkbenchError, digest, dumps, utc_now
-from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess
+from copper_mvp.knowledge_contracts import DocumentAccess, DocumentSpec
 from copper_mvp.knowledge_embedding import LocalEmbedding, load_dependencies
-from copper_mvp.knowledge_parsing import parse_document, make_chunks
+from copper_mvp.knowledge_parsing import make_chunks, parse_document
 from copper_mvp.knowledge_processing import DocumentProcessing
 
 INDEX_VERSION = "g6m.bm25-rrf.v2"
@@ -30,7 +31,7 @@ def terms(text):
     for piece in pieces:
         if re.fullmatch(r"[\u3400-\u9fff]+", piece):
             result.extend(piece)
-            result.extend(piece[i:i + 2] for i in range(len(piece) - 1))
+            result.extend(piece[i : i + 2] for i in range(len(piece) - 1))
         else:
             result.append(piece)
     return result
@@ -38,10 +39,10 @@ def terms(text):
 
 def timestamp(value=None):
     moment = datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
-    moment = moment or datetime.now(timezone.utc)
+    moment = moment or datetime.now(UTC)
     if moment.tzinfo is None:
         raise WorkbenchError("知识查询时间必须包含时区", "KNOWLEDGE_TIME")
-    return moment.astimezone(timezone.utc).isoformat()
+    return moment.astimezone(UTC).isoformat()
 
 
 class KnowledgeStore:
@@ -105,8 +106,10 @@ class KnowledgeStore:
 
     @staticmethod
     def _audit(c, actor, doc_id, action):
-        c.execute("INSERT INTO knowledge_audit(doc_id,actor_id,action,at) VALUES(?,?,?,?)",
-                  (doc_id, actor.user_id, action, utc_now()))
+        c.execute(
+            "INSERT INTO knowledge_audit(doc_id,actor_id,action,at) VALUES(?,?,?,?)",
+            (doc_id, actor.user_id, action, utc_now()),
+        )
 
     def _document(self, c, actor, doc_id, *, manage=False):
         actor.require("manage" if manage else "read")
@@ -137,8 +140,10 @@ class KnowledgeStore:
         with self.lock, self.connection() as c:
             row = c.execute("SELECT * FROM documents WHERE doc_id=?", (spec.doc_id,)).fetchone()
             if row is None:
-                c.execute("INSERT INTO documents(doc_id,project_id,acl_json) VALUES(?,?,?)",
-                          (spec.doc_id, spec.project_id, dumps({"readers": spec.readers, "read_roles": spec.read_roles})))
+                c.execute(
+                    "INSERT INTO documents(doc_id,project_id,acl_json) VALUES(?,?,?)",
+                    (spec.doc_id, spec.project_id, dumps({"readers": spec.readers, "read_roles": spec.read_roles})),
+                )
             else:
                 self._document(c, actor, spec.doc_id, manage=True)
                 if row["revoked"]:
@@ -146,12 +151,16 @@ class KnowledgeStore:
                 acl = json.loads(row["acl_json"])
                 if acl != {"readers": spec.readers, "read_roles": spec.read_roles}:
                     raise WorkbenchError("版本更新不改变权限，请先通过访问设置更新", "DOCUMENT_ACL")
-            versions = c.execute("SELECT version,metadata_json FROM document_versions WHERE doc_id=?", (spec.doc_id,)).fetchall()
+            versions = c.execute(
+                "SELECT version,metadata_json FROM document_versions WHERE doc_id=?", (spec.doc_id,)
+            ).fetchall()
             if any(json.loads(v["metadata_json"])["version_label"] == spec.version_label for v in versions):
                 raise WorkbenchError("文档版本标签已存在", "VERSION_CONFLICT")
             version = max((v["version"] for v in versions), default=0) + 1
-            c.execute("INSERT INTO document_versions(doc_id,version,metadata_json,status) VALUES(?,?,?,'registered')",
-                      (spec.doc_id, version, dumps(metadata)))
+            c.execute(
+                "INSERT INTO document_versions(doc_id,version,metadata_json,status) VALUES(?,?,?,'registered')",
+                (spec.doc_id, version, dumps(metadata)),
+            )
             self._audit(c, actor, spec.doc_id, "register")
         return {"doc_id": spec.doc_id, "version": version, "status": "registered"}
 
@@ -163,12 +172,18 @@ class KnowledgeStore:
 
     @staticmethod
     def _describe(row):
-        return {"doc_id": row["doc_id"], "version": row["version"], "metadata": json.loads(row["metadata_json"]),
-                "content_hash": row["content_hash"], "status": row["status"],
-                "parsed": json.loads(row["parsed_json"]) if row["parsed_json"] else None,
-                "review": json.loads(row["review_json"]) if row["review_json"] else None,
-                "index_id": row["index_id"], "index_parse_hash": row["index_parse_hash"],
-                "parse_hash": digest(json.loads(row["parsed_json"])) if row["parsed_json"] else None}
+        return {
+            "doc_id": row["doc_id"],
+            "version": row["version"],
+            "metadata": json.loads(row["metadata_json"]),
+            "content_hash": row["content_hash"],
+            "status": row["status"],
+            "parsed": json.loads(row["parsed_json"]) if row["parsed_json"] else None,
+            "review": json.loads(row["review_json"]) if row["review_json"] else None,
+            "index_id": row["index_id"],
+            "index_parse_hash": row["index_parse_hash"],
+            "parse_hash": digest(json.loads(row["parsed_json"])) if row["parsed_json"] else None,
+        }
 
     def authorize_upload(self, actor, doc_id, version):
         with self.lock, self.connection() as c:
@@ -190,8 +205,13 @@ class KnowledgeStore:
             load_dependencies()
             parsed = parse_document(payload, json.loads(row["metadata_json"])["format"])
             status = "needs_review" if parsed["issues"] else "parsed"
-            c.execute("UPDATE document_versions SET content=?,content_hash=?,parsed_json=?,status=? WHERE doc_id=? AND version=?",
-                      (payload, content_hash, dumps(parsed), status, doc_id, version))
+            c.execute(
+                (
+                    "UPDATE document_versions SET content=?,content_hash=?,parsed_json="
+                    "?,status=? WHERE doc_id=? AND version=?"
+                ),
+                (payload, content_hash, dumps(parsed), status, doc_id, version),
+            )
             self.processing.archive(c, actor.user_id, doc_id, version, parsed, "parse")
             self._audit(c, actor, doc_id, "parse")
             return self._describe(self._version(c, doc_id, version))
@@ -208,10 +228,18 @@ class KnowledgeStore:
                 raise WorkbenchError("解析版本已变更，请重新读取后审核", "VERSION_CONFLICT")
             if accepted and any(issue["reason"] in {"ocr_required", "ocr_no_text"} for issue in parsed["issues"]):
                 raise WorkbenchError("扫描页尚无 OCR 文字，不能直接标记为已解析", "DOCUMENT_OCR_REQUIRED")
-            review = {"accepted": accepted, "note": note, "actor_id": actor.user_id, "at": utc_now(),
-                      "content_hash": row["content_hash"], "parse_hash": parse_hash}
-            c.execute("UPDATE document_versions SET status=?,review_json=? WHERE doc_id=? AND version=?",
-                      ("parsed" if accepted else "rejected", dumps(review), doc_id, version))
+            review = {
+                "accepted": accepted,
+                "note": note,
+                "actor_id": actor.user_id,
+                "at": utc_now(),
+                "content_hash": row["content_hash"],
+                "parse_hash": parse_hash,
+            }
+            c.execute(
+                "UPDATE document_versions SET status=?,review_json=? WHERE doc_id=? AND version=?",
+                ("parsed" if accepted else "rejected", dumps(review), doc_id, version),
+            )
             self._audit(c, actor, doc_id, "review")
             return self._describe(self._version(c, doc_id, version))
 
@@ -226,28 +254,65 @@ class KnowledgeStore:
             signature = self.embedder.signature
             parsed = json.loads(row["parsed_json"])
             parse_hash = digest(parsed)
-            if row["status"] == "indexed" and row["embedding_signature"] == signature and row["index_parse_hash"] == parse_hash and row["index_version"] == INDEX_VERSION:
+            if (
+                row["status"] == "indexed"
+                and row["embedding_signature"] == signature
+                and row["index_parse_hash"] == parse_hash
+                and row["index_version"] == INDEX_VERSION
+            ):
                 return {"doc_id": doc_id, "version": version, "index_id": row["index_id"], "reused": True}
             parsed = json.loads(row["parsed_json"])
             chunks = make_chunks(parsed["blocks"])
             if not chunks:
                 raise WorkbenchError("没有可索引的文字", "DOCUMENT_EMPTY")
             vectors = self.embedder.encode([v["text"] for v in chunks])
-            index_id = digest({"content_hash": row["content_hash"], "parser": parsed["parser_version"],
-                               "embedding": signature, "index_version": INDEX_VERSION, "parse_hash": parse_hash})
+            index_id = digest(
+                {
+                    "content_hash": row["content_hash"],
+                    "parser": parsed["parser_version"],
+                    "embedding": signature,
+                    "index_version": INDEX_VERSION,
+                    "parse_hash": parse_hash,
+                }
+            )
             c.execute("DELETE FROM knowledge_chunks WHERE doc_id=? AND version=?", (doc_id, version))
-            for item, vector in zip(chunks, vectors):
+            for item, vector in zip(chunks, vectors, strict=True):
                 content_hash = hashlib.sha256(item["text"].encode("utf-8")).hexdigest()
-                chunk_id = digest({"doc_id": doc_id, "version": version, "block": item["block_id"],
-                                   "span": item["span"], "row_range": item.get("row_range"), "hash": content_hash, "parse_hash": parse_hash})[:32]
-                item.update(chunk_id=chunk_id, hash=content_hash, document_hash=row["content_hash"], parse_hash=parse_hash)
-                c.execute("INSERT INTO knowledge_chunks VALUES(?,?,?,?,?,?)",
-                          (chunk_id, doc_id, version, index_id, dumps(item), np.asarray(vector, dtype="<f4").tobytes()))
-            c.execute("UPDATE document_versions SET index_id=?,embedding_signature=?,index_parse_hash=?,index_version=?,status='indexed' WHERE doc_id=? AND version=?",
-                      (index_id, signature, parse_hash, INDEX_VERSION, doc_id, version))
+                chunk_id = digest(
+                    {
+                        "doc_id": doc_id,
+                        "version": version,
+                        "block": item["block_id"],
+                        "span": item["span"],
+                        "row_range": item.get("row_range"),
+                        "hash": content_hash,
+                        "parse_hash": parse_hash,
+                    }
+                )[:32]
+                item.update(
+                    chunk_id=chunk_id, hash=content_hash, document_hash=row["content_hash"], parse_hash=parse_hash
+                )
+                c.execute(
+                    "INSERT INTO knowledge_chunks VALUES(?,?,?,?,?,?)",
+                    (chunk_id, doc_id, version, index_id, dumps(item), np.asarray(vector, dtype="<f4").tobytes()),
+                )
+            c.execute(
+                (
+                    "UPDATE document_versions SET index_id=?,embedding_signature=?,inde"
+                    "x_parse_hash=?,index_version=?,status='indexed' WHERE doc_id=? AND"
+                    " version=?"
+                ),
+                (index_id, signature, parse_hash, INDEX_VERSION, doc_id, version),
+            )
             self._audit(c, actor, doc_id, "index")
-            return {"doc_id": doc_id, "version": version, "index_id": index_id,
-                    "chunks": len(chunks), "embedding_signature": signature, "reused": False}
+            return {
+                "doc_id": doc_id,
+                "version": version,
+                "index_id": index_id,
+                "chunks": len(chunks),
+                "embedding_signature": signature,
+                "reused": False,
+            }
 
     def notify_change(self, doc_id, kind):
         for listener in tuple(self.change_listeners):
@@ -256,8 +321,10 @@ class KnowledgeStore:
     def change_access(self, actor, doc_id, access: DocumentAccess):
         with self.lock, self.connection() as c:
             self._document(c, actor, doc_id, manage=True)
-            c.execute("UPDATE documents SET acl_json=?,revoked=? WHERE doc_id=?",
-                      (dumps(access.model_dump(exclude={"revoked"})), int(access.revoked), doc_id))
+            c.execute(
+                "UPDATE documents SET acl_json=?,revoked=? WHERE doc_id=?",
+                (dumps(access.model_dump(exclude={"revoked"})), int(access.revoked), doc_id),
+            )
             self._audit(c, actor, doc_id, "revoke" if access.revoked else "access_change")
         self.notify_change(doc_id, "access")
         return {"doc_id": doc_id, "revoked": access.revoked}
@@ -265,10 +332,17 @@ class KnowledgeStore:
     def _visible(self, c, actor, as_of):
         actor.require("read")
         selected = {}
-        rows = c.execute("""SELECT v.doc_id,v.version,v.metadata_json,v.index_id,v.embedding_signature,v.index_parse_hash,v.index_version,d.acl_json
-                            FROM document_versions v JOIN documents d USING(doc_id)
-                            WHERE d.project_id=? AND d.revoked=0 AND d.deleted_at IS NULL AND v.index_id IS NOT NULL""",
-                         (actor.project_id,)).fetchall()
+        rows = c.execute(
+            (
+                "SELECT v.doc_id,v.version,v.metadata_json,v.index_id,v.embedding_s"
+                "ignature,v.index_parse_hash,v.index_version,d.acl_json\n"
+                "                            FROM document_versions v JOIN document"
+                "s d USING(doc_id)\n"
+                "                            WHERE d.project_id=? AND d.revoked=0 A"
+                "ND d.deleted_at IS NULL AND v.index_id IS NOT NULL"
+            ),
+            (actor.project_id,),
+        ).fetchall()
         for row in rows:
             acl = json.loads(row["acl_json"])
             if actor.role != "owner" and actor.user_id not in acl["readers"] and actor.role not in acl["read_roles"]:
@@ -278,35 +352,68 @@ class KnowledgeStore:
                 continue
             previous = selected.get(row["doc_id"])
             if previous is None or (meta["effective_at"], row["version"]) > (
-                    json.loads(previous["metadata_json"])["effective_at"], previous["version"]):
+                json.loads(previous["metadata_json"])["effective_at"],
+                previous["version"],
+            ):
                 selected[row["doc_id"]] = row
-        return {key: row for key, row in selected.items()
-                if not json.loads(row["metadata_json"])["expires_at"]
-                or json.loads(row["metadata_json"])["expires_at"] > as_of}
+        return {
+            key: row
+            for key, row in selected.items()
+            if not json.loads(row["metadata_json"])["expires_at"]
+            or json.loads(row["metadata_json"])["expires_at"] > as_of
+        }
 
     def list(self, actor, as_of=None):
         with self.lock, self.connection() as c:
             rows = self._visible(c, actor, timestamp(as_of))
-            return [{"doc_id": row["doc_id"], "version": row["version"],
-                     "metadata": json.loads(row["metadata_json"]), "index_id": row["index_id"]}
-                    for row in rows.values()]
+            return [
+                {
+                    "doc_id": row["doc_id"],
+                    "version": row["version"],
+                    "metadata": json.loads(row["metadata_json"]),
+                    "index_id": row["index_id"],
+                }
+                for row in rows.values()
+            ]
 
     @staticmethod
     def citation(item, row, as_of):
-        return {"doc_id": row["doc_id"], "version": row["version"], "chunk_id": item["chunk_id"],
-                "page": item["location"].get("page"), "heading": item["heading"],
-                "location": item["location"], "span": item["span"], "hash": item["hash"],
-                "document_hash": item["document_hash"], "index_id": row["index_id"], "as_of": as_of,
-                "parse_hash": item.get("parse_hash", row["index_parse_hash"]), "index_version": row["index_version"],
-                "source_url": f"/api/v2/knowledge/documents/{row['doc_id']}/versions/{row['version']}/source?as_of={quote(as_of, safe='')}"
-                              + (f"#page={item['location']['page']}" if item["location"].get("page") else "")}
+        return {
+            "doc_id": row["doc_id"],
+            "version": row["version"],
+            "chunk_id": item["chunk_id"],
+            "page": item["location"].get("page"),
+            "heading": item["heading"],
+            "location": item["location"],
+            "span": item["span"],
+            "hash": item["hash"],
+            "document_hash": item["document_hash"],
+            "index_id": row["index_id"],
+            "as_of": as_of,
+            "parse_hash": item.get("parse_hash", row["index_parse_hash"]),
+            "index_version": row["index_version"],
+            "source_url": (
+                "/api/v2/knowledge/documents/"
+                f"{row['doc_id']}"
+                "/versions/"
+                f"{row['version']}"
+                "/source?as_of="
+                f"{quote(as_of, safe='')}"
+            )
+            + (f"#page={item['location']['page']}" if item["location"].get("page") else ""),
+        }
 
     def cache_signature(self, actor, as_of=None):
         with self.lock, self.connection() as c:
             visible = self._visible(c, actor, timestamp(as_of))
             revision = c.execute("SELECT COALESCE(MAX(id),0) FROM knowledge_audit").fetchone()[0]
-            return digest({"revision": revision, "reranker": self.reranker.cache_key if self.reranker else None,
-                           "visible": sorted((row["doc_id"], row["version"], row["index_id"]) for row in visible.values())})
+            return digest(
+                {
+                    "revision": revision,
+                    "reranker": self.reranker.cache_key if self.reranker else None,
+                    "visible": sorted((row["doc_id"], row["version"], row["index_id"]) for row in visible.values()),
+                }
+            )
 
     def search(self, actor, query, as_of=None, limit=5, context_tokens=6000, rerank=False):
         bound = timestamp(as_of)
@@ -317,8 +424,10 @@ class KnowledgeStore:
             for row in visible.values():
                 if row["embedding_signature"] != self.embedder.signature:
                     raise WorkbenchError("嵌入版本已变更，需要重建索引", "KNOWLEDGE_INDEX_VERSION")
-                for chunk in c.execute("SELECT * FROM knowledge_chunks WHERE doc_id=? AND version=? AND index_id=?",
-                                       (row["doc_id"], row["version"], row["index_id"])):
+                for chunk in c.execute(
+                    "SELECT * FROM knowledge_chunks WHERE doc_id=? AND version=? AND index_id=?",
+                    (row["doc_id"], row["version"], row["index_id"]),
+                ):
                     chunks.append(json.loads(chunk["record_json"]))
                     vectors.append(np.frombuffer(chunk["vector"], dtype="<f4"))
                     versions.append(row)
@@ -345,38 +454,60 @@ class KnowledgeStore:
             if self.reranker is not None and rerank:
                 candidate_ids = [index for index, _ in ordered]
                 reranker_result = self.reranker.rank(query, [chunks[index]["text"] for index in candidate_ids])
-                reranker_scores = dict(zip(candidate_ids, reranker_result["scores"]))
+                reranker_scores = dict(zip(candidate_ids, reranker_result["scores"], strict=True))
                 ordered.sort(key=lambda pair: (-reranker_scores[pair[0]], -pair[1], pair[0]))
             items, used = [], 0
             for index, score in ordered:
                 item, row = chunks[index], versions[index]
                 if used + item["tokens"] > context_tokens:
                     continue
-                items.append({"text": item["text"], "kind": item["kind"], "score": score,
-                              "bm25": float(scores[index]), "cosine": float(semantic[index]),
-                              "rerank_score": reranker_scores.get(index),
-                              "citation": self.citation(item, row, bound), "authority": "evidence_only"})
+                items.append(
+                    {
+                        "text": item["text"],
+                        "kind": item["kind"],
+                        "score": score,
+                        "bm25": float(scores[index]),
+                        "cosine": float(semantic[index]),
+                        "rerank_score": reranker_scores.get(index),
+                        "citation": self.citation(item, row, bound),
+                        "authority": "evidence_only",
+                    }
+                )
                 used += item["tokens"]
                 if len(items) >= limit:
                     break
-            return {"items": items, "as_of": bound, "context_tokens": used, "index_version": INDEX_VERSION,
-                    "reranking": "local_cross_encoder" if reranker_result else "reciprocal_rank_fusion_k60",
-                    "reranker": {k: v for k, v in reranker_result.items() if k != "scores"} if reranker_result else None,
-                    "embedding_signature": self.embedder.signature,
-                    "local_only": True}
+            return {
+                "items": items,
+                "as_of": bound,
+                "context_tokens": used,
+                "index_version": INDEX_VERSION,
+                "reranking": "local_cross_encoder" if reranker_result else "reciprocal_rank_fusion_k60",
+                "reranker": {k: v for k, v in reranker_result.items() if k != "scores"} if reranker_result else None,
+                "embedding_signature": self.embedder.signature,
+                "local_only": True,
+            }
 
     def resolve(self, actor, chunk_id, as_of=None):
         bound = timestamp(as_of)
         with self.lock, self.connection() as c:
             visible = self._visible(c, actor, bound)
             for row in visible.values():
-                item = c.execute("SELECT record_json FROM knowledge_chunks WHERE chunk_id=? AND doc_id=? AND version=? AND index_id=?",
-                                 (chunk_id, row["doc_id"], row["version"], row["index_id"])).fetchone()
+                item = c.execute(
+                    (
+                        "SELECT record_json FROM knowledge_chunks WHERE chunk_id=? AND doc_"
+                        "id=? AND version=? AND index_id=?"
+                    ),
+                    (chunk_id, row["doc_id"], row["version"], row["index_id"]),
+                ).fetchone()
                 if item:
                     chunk = json.loads(item["record_json"])
                     if hashlib.sha256(chunk["text"].encode("utf-8")).hexdigest() != chunk["hash"]:
                         raise WorkbenchError("引用内容哈希不一致", "KNOWLEDGE_CITATION_HASH")
-                    return {"text": chunk["text"], "citation": self.citation(chunk, row, bound), "authority": "evidence_only"}
+                    return {
+                        "text": chunk["text"],
+                        "citation": self.citation(chunk, row, bound),
+                        "authority": "evidence_only",
+                    }
             raise WorkbenchError("引用已失效、撤销或不再可访问", "CITATION_NOT_FOUND")
 
     def source(self, actor, doc_id, version, as_of=None):
@@ -399,7 +530,9 @@ class KnowledgeStore:
             with self.connection() as c:
                 self._document(c, actor, doc_id, manage=True)
                 c.execute("DELETE FROM document_versions WHERE doc_id=?", (doc_id,))
-                c.execute("UPDATE documents SET deleted_at=?,revoked=1,acl_json='{}' WHERE doc_id=?", (utc_now(), doc_id))
+                c.execute(
+                    "UPDATE documents SET deleted_at=?,revoked=1,acl_json='{}' WHERE doc_id=?", (utc_now(), doc_id)
+                )
                 self._audit(c, actor, doc_id, "delete_content_and_vectors")
             with self.connection() as c:
                 c.execute("VACUUM")

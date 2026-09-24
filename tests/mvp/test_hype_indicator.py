@@ -1,4 +1,5 @@
 import numpy as np
+
 from copper_mvp.hype import ExactHypEGeometry
 
 
@@ -7,7 +8,7 @@ def test_hype_exact_weights_match_manual_rectangle_areas():
     # Three exclusive unit squares; shared strips and the triple-covered square.
     np.testing.assert_allclose(geometry.fitness(1), [1, 1, 1])
     np.testing.assert_allclose(geometry.fitness(2), [1.25, 1.5, 1.25])
-    np.testing.assert_allclose(geometry.fitness(3), [11/6, 7/3, 11/6])
+    np.testing.assert_allclose(geometry.fitness(3), [11 / 6, 7 / 3, 11 / 6])
     assert np.isclose(geometry.fitness(3).sum(), 6)
 
 

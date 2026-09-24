@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -21,7 +22,9 @@ class RunRequest(BaseModel):
 
     @model_validator(mode="after")
     def needs_event(self):
-        if (self.task_type == "predict" or (self.task_type == "optimize" and self.mode == "plant")) and not self.event_id:
+        if (
+            self.task_type == "predict" or (self.task_type == "optimize" and self.mode == "plant")
+        ) and not self.event_id:
             raise ValueError("请选择历史事件")
         return self
 

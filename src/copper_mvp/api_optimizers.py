@@ -1,8 +1,9 @@
 """Read registered optimization methods and locally completed comparisons."""
+
 from __future__ import annotations
 
 import json
-from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
@@ -36,8 +37,13 @@ def optimizer_router():
 
     @router.get("/optimizer-comparisons")
     def comparisons(request: Request):
-        return {"items": sorted([state(p.parent) for p in root(request).glob("*/state.json")],
-                                key=lambda item: item["created_at"], reverse=True)}
+        return {
+            "items": sorted(
+                [state(p.parent) for p in root(request).glob("*/state.json")],
+                key=lambda item: item["created_at"],
+                reverse=True,
+            )
+        }
 
     @router.get("/optimizer-comparisons/{run_id}")
     def comparison(request: Request, run_id: str):
@@ -55,7 +61,11 @@ def optimizer_router():
         audit_path = path / "independent_audit.json"
         if audit_path.is_file():
             audit = json.loads(audit_path.read_text(encoding="utf-8"))
-            record["independent_audit"] = {k: v for k, v in audit.items() if k not in ("rows", "source_hashes", "scalarization_audits", "bayesian_audits")}
+            record["independent_audit"] = {
+                k: v
+                for k, v in audit.items()
+                if k not in ("rows", "source_hashes", "scalarization_audits", "bayesian_audits")
+            }
         return record
 
     @router.get("/optimizer-comparisons/{run_id}/cases/{case}/{optimizer}/{seed}")

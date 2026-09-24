@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import hashlib
-from importlib.metadata import version as distribution_version
 import json
 import os
-from pathlib import Path
 import platform
+from datetime import UTC, datetime
+from importlib.metadata import version as distribution_version
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -57,7 +57,7 @@ def sha256_file(path: str | Path) -> str:
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _atomic_write_bytes(path: Path, payload: bytes) -> None:
@@ -75,24 +75,18 @@ def _atomic_write_bytes(path: Path, payload: bytes) -> None:
 
 
 def _atomic_write_json(path: Path, payload: dict[str, Any]) -> None:
-    encoded = (
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
+    encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
     _atomic_write_bytes(path, encoded)
 
 
 def _create_exclusive_json(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    encoded = (
-        json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    ).encode("utf-8")
+    encoded = (json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n").encode("utf-8")
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     try:
         descriptor = os.open(path, flags)
     except FileExistsError as exc:
-        raise ExternalEvaluationTransactionError(
-            f"一次性 claim 已存在，禁止重复评价: {path}"
-        ) from exc
+        raise ExternalEvaluationTransactionError(f"一次性 claim 已存在，禁止重复评价: {path}") from exc
     try:
         os.write(descriptor, encoded)
         os.fsync(descriptor)
@@ -117,9 +111,7 @@ def _resolve_project_file(project_root: Path, value: str | Path) -> Path:
     try:
         path.relative_to(root)
     except ValueError as exc:
-        raise ExternalEvaluationTransactionError(
-            f"冻结工件路径超出项目根目录: {value}"
-        ) from exc
+        raise ExternalEvaluationTransactionError(f"冻结工件路径超出项目根目录: {value}") from exc
     if not path.is_file():
         raise ExternalEvaluationTransactionError(f"冻结工件不存在: {path}")
     return path
@@ -135,9 +127,7 @@ def _resolve_workspace_file(project_root: Path, value: str | Path) -> Path:
     try:
         path.relative_to(workspace)
     except ValueError as exc:
-        raise ExternalEvaluationTransactionError(
-            f"冻结工件路径超出 workspace: {value}"
-        ) from exc
+        raise ExternalEvaluationTransactionError(f"冻结工件路径超出 workspace: {value}") from exc
     if not path.is_file():
         raise ExternalEvaluationTransactionError(f"冻结工件不存在: {path}")
     return path
@@ -150,9 +140,7 @@ def verify_runtime_freeze_manifest(
 
     root = Path(project_root).resolve()
     manifest_file = _resolve_project_file(root, manifest_path)
-    manifest_hash = _verify_hash(
-        manifest_file, expected_sha256, "external_runtime_manifest"
-    )
+    manifest_hash = _verify_hash(manifest_file, expected_sha256, "external_runtime_manifest")
     payload = json.loads(manifest_file.read_text(encoding="utf-8"))
     if payload.get("manifest_id") != "EXTERNAL_2026_RUNTIME_FREEZE_MANIFEST_V1":
         raise ExternalEvaluationTransactionError("外评运行时清单 ID 不匹配")
@@ -164,17 +152,13 @@ def verify_runtime_freeze_manifest(
         raise ExternalEvaluationTransactionError("外评运行时清单路径不唯一")
     missing_required = sorted(REQUIRED_RUNTIME_PATHS - set(paths))
     if missing_required:
-        raise ExternalEvaluationTransactionError(
-            f"外评运行时清单缺少必要依赖: {missing_required}"
-        )
+        raise ExternalEvaluationTransactionError(f"外评运行时清单缺少必要依赖: {missing_required}")
     verified: dict[str, str] = {}
     for item, relative in zip(files, paths, strict=True):
         path = _resolve_project_file(root, relative)
         actual = _verify_hash(path, str(item.get("sha256") or ""), relative)
         if int(item.get("size_bytes", -1)) != path.stat().st_size:
-            raise ExternalEvaluationTransactionError(
-                f"外评运行时文件大小不匹配: {relative}"
-            )
+            raise ExternalEvaluationTransactionError(f"外评运行时文件大小不匹配: {relative}")
         verified[relative] = actual
 
     expected_versions = payload.get("runtime_versions") or {}
@@ -187,9 +171,7 @@ def verify_runtime_freeze_manifest(
         "scikit-learn": distribution_version("scikit-learn"),
     }
     if expected_versions != actual_versions:
-        raise ExternalEvaluationTransactionError(
-            f"外评运行环境版本不匹配: {actual_versions} != {expected_versions}"
-        )
+        raise ExternalEvaluationTransactionError(f"外评运行环境版本不匹配: {actual_versions} != {expected_versions}")
     return {
         "manifest_sha256": manifest_hash,
         "verified_file_count": len(verified),
@@ -219,15 +201,9 @@ def verify_release_integrity(
     freezes = gate.required_freezes
 
     timing = _resolve_workspace_file(root, freezes.timing_contract_v2_path or "")
-    core_contract = _resolve_project_file(
-        root, freezes.core_feature_contract_path or ""
-    )
-    selection_protocol = _resolve_project_file(
-        root, freezes.model_selection_protocol_path
-    )
-    timing_hash = _verify_hash(
-        timing, freezes.timing_contract_v2_sha256, "timing_contract_v2"
-    )
+    core_contract = _resolve_project_file(root, freezes.core_feature_contract_path or "")
+    selection_protocol = _resolve_project_file(root, freezes.model_selection_protocol_path)
+    timing_hash = _verify_hash(timing, freezes.timing_contract_v2_sha256, "timing_contract_v2")
     core_hash = _verify_hash(
         core_contract,
         freezes.core_feature_contract_sha256,
@@ -241,9 +217,7 @@ def verify_release_integrity(
 
     selected = _resolve_project_file(root, freezes.selected_model_manifest_path or "")
     graph = _resolve_project_file(root, freezes.agent_graph_path)
-    selected_hash = _verify_hash(
-        selected, freezes.selected_model_manifest_sha256, "selected_model_manifest"
-    )
+    selected_hash = _verify_hash(selected, freezes.selected_model_manifest_sha256, "selected_model_manifest")
     graph_hash = _verify_hash(graph, freezes.frozen_agent_graph_sha256, "agent_graph")
 
     decision = _resolve_project_file(root, review_decision_path)
@@ -261,31 +235,21 @@ def verify_release_integrity(
         and _resolve_project_file(root, freezes.human_review_decision_path) != decision
     ):
         raise ExternalEvaluationTransactionError("人工抽核 decision 路径与释放门不一致")
-    if (
-        freezes.human_review_decision_sha256
-        and decision_hash.lower() != freezes.human_review_decision_sha256.lower()
-    ):
+    if freezes.human_review_decision_sha256 and decision_hash.lower() != freezes.human_review_decision_sha256.lower():
         raise ExternalEvaluationTransactionError("人工抽核 decision SHA-256 不匹配")
 
     workbook_value = str(decision_payload.get("source_workbook") or "")
     workbook = _resolve_project_file(root, workbook_value)
     workbook_hash = sha256_file(workbook)
-    declared_workbook_hash = str(
-        decision_payload.get("source_workbook_sha256") or ""
-    )
+    declared_workbook_hash = str(decision_payload.get("source_workbook_sha256") or "")
     if not declared_workbook_hash or workbook_hash.lower() != declared_workbook_hash.lower():
         raise ExternalEvaluationTransactionError("人工抽核工作簿 SHA-256 与 decision 不一致")
-    if (
-        freezes.human_review_workbook_sha256
-        and workbook_hash.lower() != freezes.human_review_workbook_sha256.lower()
-    ):
+    if freezes.human_review_workbook_sha256 and workbook_hash.lower() != freezes.human_review_workbook_sha256.lower():
         raise ExternalEvaluationTransactionError("人工抽核工作簿 SHA-256 与释放门不一致")
 
     protocol_hash: str | None = None
     if freezes.external_evaluation_protocol_path:
-        protocol = _resolve_project_file(
-            root, freezes.external_evaluation_protocol_path
-        )
+        protocol = _resolve_project_file(root, freezes.external_evaluation_protocol_path)
         protocol_hash = _verify_hash(
             protocol,
             freezes.external_evaluation_protocol_sha256,
@@ -334,9 +298,7 @@ def verify_release_integrity(
         "external_evaluation_protocol_sha256": protocol_hash,
         "external_evaluator_sha256": evaluator_hash,
         "external_runtime_manifest_sha256": runtime_evidence["manifest_sha256"],
-        "external_runtime_verified_file_count": runtime_evidence[
-            "verified_file_count"
-        ],
+        "external_runtime_verified_file_count": runtime_evidence["verified_file_count"],
         "external_release_evidence_sha256": release_evidence_hash,
     }
 
@@ -352,14 +314,10 @@ def _replace_gate_status(
         raise ExternalEvaluationTransactionError("释放门在事务期间发生了并发修改")
     gate = load_external_release_gate(gate_path)
     if gate.status != expected_status:
-        raise ExternalEvaluationTransactionError(
-            f"释放门状态竞态: {gate.status} != {expected_status}"
-        )
+        raise ExternalEvaluationTransactionError(f"释放门状态竞态: {gate.status} != {expected_status}")
     payload = gate.model_dump(mode="json")
     payload["status"] = new_status
-    encoded = yaml.safe_dump(
-        payload, allow_unicode=True, sort_keys=False, default_flow_style=False
-    ).encode("utf-8")
+    encoded = yaml.safe_dump(payload, allow_unicode=True, sort_keys=False, default_flow_style=False).encode("utf-8")
     _atomic_write_bytes(gate_path, encoded)
     return sha256_file(gate_path)
 
@@ -453,9 +411,7 @@ def mark_predictions_frozen(
     return claim
 
 
-def mark_outcome_access_started(
-    *, gate_path: str | Path, claim_path: str | Path, run_id: str
-) -> dict[str, Any]:
+def mark_outcome_access_started(*, gate_path: str | Path, claim_path: str | Path, run_id: str) -> dict[str, Any]:
     gate = load_external_release_gate(gate_path)
     if gate.status != "RUNNING_EXTERNAL_EVALUATION":
         raise ExternalEvaluationTransactionError("封存真值只能由 RUNNING 事务读取")
@@ -475,9 +431,7 @@ def mark_outcome_access_started(
     return claim
 
 
-def assert_sealed_access_authorized(
-    *, gate_path: str | Path, claim_path: str | Path, run_id: str
-) -> None:
+def assert_sealed_access_authorized(*, gate_path: str | Path, claim_path: str | Path, run_id: str) -> None:
     gate = load_external_release_gate(gate_path)
     claim = _read_claim(Path(claim_path).resolve(), run_id)
     if gate.status != "RUNNING_EXTERNAL_EVALUATION":
@@ -543,14 +497,10 @@ def fail_external_evaluation_closed(
     elif gate.status == "FAILED_CLOSED_EXTERNAL_EVALUATION":
         failed_hash = sha256_file(gate_file)
     else:
-        raise ExternalEvaluationTransactionError(
-            f"不能把当前门状态改为 FAILED_CLOSED: {gate.status}"
-        )
+        raise ExternalEvaluationTransactionError(f"不能把当前门状态改为 FAILED_CLOSED: {gate.status}")
     claim["status"] = "FAILED_CLOSED"
     claim["phase"] = (
-        "FAILED_AFTER_OUTCOME_ACCESS"
-        if claim.get("outcome_access_started")
-        else "FAILED_BEFORE_OUTCOME_ACCESS"
+        "FAILED_AFTER_OUTCOME_ACCESS" if claim.get("outcome_access_started") else "FAILED_BEFORE_OUTCOME_ACCESS"
     )
     claim["failure"] = {
         "phase": claim["phase"],

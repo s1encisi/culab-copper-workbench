@@ -1,7 +1,9 @@
 """Six methods behind one two-target, physical-unit prediction interface."""
+
 from __future__ import annotations
 
 import warnings
+
 import numpy as np
 from sklearn.compose import ColumnTransformer, TransformedTargetRegressor
 from sklearn.cross_decomposition import PLSRegression
@@ -10,33 +12,46 @@ from sklearn.linear_model import ElasticNet, HuberRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
+from copper_mvp.bart_registry import BART_METHODS
+from copper_mvp.classical_registry import CLASSICAL_METHODS
 from copper_mvp.common import WorkbenchError
 from copper_mvp.model_registry import FEATURE_COUNT, NUMERIC_COUNT, PRESETS, SEED, method_spec
 from copper_mvp.modeling import make_model
-from copper_mvp.classical_registry import CLASSICAL_METHODS
-from copper_mvp.statistical_registry import STATISTICAL_METHODS, SEQUENCE_METHODS
 from copper_mvp.specialized_registry import SPECIALIZED_METHODS
-from copper_mvp.bart_registry import BART_METHODS
+from copper_mvp.statistical_registry import SEQUENCE_METHODS, STATISTICAL_METHODS
 from copper_mvp.symbolic_registry import SYMBOLIC_METHODS
+from copper_mvp.tabpfn_registry import TABPFN_METHODS
 from copper_mvp.tabular_registry import TABULAR_METHODS
 from copper_mvp.temporal_registry import TEMPORAL_METHODS
-from copper_mvp.tabpfn_registry import TABPFN_METHODS
 
 
 def preprocess():
-    return ColumnTransformer([
-        ("numeric", Pipeline([("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
-                              ("scale", StandardScaler())]), list(range(NUMERIC_COUNT))),
-        ("modes", OneHotEncoder(categories=[[0., 1., 2.]] * 4, handle_unknown="ignore", sparse_output=False),
-         list(range(NUMERIC_COUNT, FEATURE_COUNT))),
-    ])
+    return ColumnTransformer(
+        [
+            (
+                "numeric",
+                Pipeline(
+                    [
+                        ("impute", SimpleImputer(strategy="median", keep_empty_features=True)),
+                        ("scale", StandardScaler()),
+                    ]
+                ),
+                list(range(NUMERIC_COUNT)),
+            ),
+            (
+                "modes",
+                OneHotEncoder(categories=[[0.0, 1.0, 2.0]] * 4, handle_unknown="ignore", sparse_output=False),
+                list(range(NUMERIC_COUNT, FEATURE_COUNT)),
+            ),
+        ]
+    )
 
 
 def validate_X(values):
     X = np.asarray(values, dtype=float)
     if X.ndim != 2 or X.shape[1] != FEATURE_COUNT or not len(X):
         raise WorkbenchError("模型输入必须为非空的 114 字段矩阵", "MODEL_INPUT_SHAPE")
-    if np.isinf(X).any() or not np.isfinite(X[:, :2]).all() or not np.isin(X[:, NUMERIC_COUNT:], [0., 1., 2.]).all():
+    if np.isinf(X).any() or not np.isfinite(X[:, :2]).all() or not np.isin(X[:, NUMERIC_COUNT:], [0.0, 1.0, 2.0]).all():
         raise WorkbenchError("当前浓度或工况编码无效，或输入包含无穷值", "MODEL_INPUT_VALUES")
     return X
 
@@ -69,6 +84,7 @@ class RegisteredModel:
             raise WorkbenchError("训练目标必须是有限的 Cu/As 双列矩阵", "MODEL_TARGET_VALUES")
         if self.method_id in TABPFN_METHODS:
             from copper_mvp.tabpfn_models import TabPFNModel
+
             self._tabpfn = TabPFNModel(self.seed).fit(X, y, weight, max_wall_seconds=max_wall_seconds)
             self.models, self.fit_warnings = self._tabpfn.models, self._tabpfn.fit_warnings
             self.fit_metadata = self._tabpfn.fit_metadata
@@ -76,6 +92,7 @@ class RegisteredModel:
             return self
         if self.method_id in TABULAR_METHODS:
             from copper_mvp.tabular_models import TabularModel
+
             self._tabular = TabularModel(self.method_id, self.seed).fit(X, y, weight, max_wall_seconds=max_wall_seconds)
             self.models, self.fit_warnings = self._tabular.models, self._tabular.fit_warnings
             self.fit_metadata = self._tabular.fit_metadata
@@ -83,6 +100,7 @@ class RegisteredModel:
             return self
         if self.method_id in SYMBOLIC_METHODS:
             from copper_mvp.symbolic_models import SymbolicModel
+
             self._symbolic = SymbolicModel(self.seed).fit(X, y, weight, max_wall_seconds=max_wall_seconds)
             self.models, self.fit_warnings = self._symbolic.models, self._symbolic.fit_warnings
             self.fit_metadata = self._symbolic.fit_metadata
@@ -90,6 +108,7 @@ class RegisteredModel:
             return self
         if self.method_id in BART_METHODS:
             from copper_mvp.bart_models import BartModel
+
             self._bart = BartModel(self.seed).fit(X, y, weight, max_wall_seconds=max_wall_seconds)
             self.models, self.fit_warnings = self._bart.models, self._bart.fit_warnings
             self.fit_metadata = self._bart.fit_metadata
@@ -97,6 +116,7 @@ class RegisteredModel:
             return self
         if self.method_id in STATISTICAL_METHODS:
             from copper_mvp.statistical_models import StatisticalRegressor
+
             self._statistical = StatisticalRegressor(self.method_id, self.seed).fit(X, y)
             self.models = self._statistical.models
             self.fit_warnings = self._statistical.fit_warnings
@@ -105,6 +125,7 @@ class RegisteredModel:
             return self
         if self.method_id in SPECIALIZED_METHODS:
             from copper_mvp.specialized_models import SpecializedModel
+
             self._specialized = SpecializedModel(self.method_id, self.seed).fit(X, y, weight)
             self.models = self._specialized.models
             self.fit_warnings = self._specialized.fit_warnings
@@ -113,6 +134,7 @@ class RegisteredModel:
             return self
         if self.method_id in CLASSICAL_METHODS:
             from copper_mvp.classical_models import ClassicalModel
+
             self._classical = ClassicalModel(self.method_id, self.seed).fit(X, y, weight)
             self.models = self._classical.models
             self.fit_warnings = self._classical.fit_warnings
@@ -125,7 +147,8 @@ class RegisteredModel:
             if self.method_id == "PLS":
                 model = TransformedTargetRegressor(
                     regressor=Pipeline([("preprocess", preprocess()), ("regressor", PLSRegression(**PRESETS["PLS"]))]),
-                    transformer=StandardScaler())
+                    transformer=StandardScaler(),
+                )
                 model.fit(X, delta)
                 self.models = [model]
             else:
@@ -135,11 +158,20 @@ class RegisteredModel:
                         if self.method_id == "DeltaHGB":
                             model.set_params(random_state=self.seed)
                     else:
-                        estimator = ElasticNet(**PRESETS["ElasticNet"]) if self.method_id == "ElasticNet" else HuberRegressor(**PRESETS["Huber"])
+                        estimator = (
+                            ElasticNet(**PRESETS["ElasticNet"])
+                            if self.method_id == "ElasticNet"
+                            else HuberRegressor(**PRESETS["Huber"])
+                        )
                         model = TransformedTargetRegressor(
                             regressor=Pipeline([("preprocess", preprocess()), ("regressor", estimator)]),
-                            transformer=StandardScaler())
-                    kwargs = {} if weight is None else {"sample_weight" if self.method_id == "DeltaHGB" else "regressor__sample_weight": weight}
+                            transformer=StandardScaler(),
+                        )
+                    kwargs = (
+                        {}
+                        if weight is None
+                        else {"sample_weight" if self.method_id == "DeltaHGB" else "regressor__sample_weight": weight}
+                    )
                     model.fit(X, delta[:, target], **kwargs)
                     self.models.append(model)
         self.fit_warnings = [{"category": w.category.__name__, "message": str(w.message)[:400]} for w in captured]
@@ -193,7 +225,10 @@ class RegisteredModel:
     def fit_context(self, data, train_ids, cutoff, *, max_wall_seconds=None):
         if self.method_id in TEMPORAL_METHODS:
             from copper_mvp.temporal_models import TemporalModel
-            self._temporal = TemporalModel(self.method_id, self.seed).fit_context(data, train_ids, cutoff, max_wall_seconds=max_wall_seconds)
+
+            self._temporal = TemporalModel(self.method_id, self.seed).fit_context(
+                data, train_ids, cutoff, max_wall_seconds=max_wall_seconds
+            )
             self.models, self.fit_warnings = self._temporal.models, self._temporal.fit_warnings
             self.fit_metadata = self._temporal.fit_metadata
             self.is_fitted = True
@@ -201,6 +236,7 @@ class RegisteredModel:
         if self.method_id not in SEQUENCE_METHODS:
             raise WorkbenchError("该方法使用矩阵训练接口", "MODEL_CONTEXT_UNSUPPORTED")
         from copper_mvp.statistical_models import EventSequenceModel
+
         self._sequence = EventSequenceModel(self.method_id, self.seed).fit_context(data, train_ids, cutoff)
         self.models = self._sequence.models
         self.fit_warnings = self._sequence.fit_warnings

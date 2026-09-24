@@ -72,9 +72,7 @@ def _normalized(value: str | Path) -> str:
     return str(PurePosixPath(str(value).replace("\\", "/"))).lstrip("./")
 
 
-def assert_pre_freeze_path_allowed(
-    gate: ExternalReleaseGateV1, relative_path: str | Path
-) -> None:
+def assert_pre_freeze_path_allowed(gate: ExternalReleaseGateV1, relative_path: str | Path) -> None:
     normalized = _normalized(relative_path)
     forbidden = {_normalized(item) for item in gate.forbidden_pre_freeze_access}
     if gate.status != "RELEASED_FOR_SINGLE_EVALUATION" and normalized in forbidden:

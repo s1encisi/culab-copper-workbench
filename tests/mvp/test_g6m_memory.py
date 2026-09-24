@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from types import SimpleNamespace
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -9,9 +9,9 @@ from pydantic import ValidationError
 
 from copper_mvp.access import Principal
 from copper_mvp.common import WorkbenchError, digest, dumps
-from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess
+from copper_mvp.knowledge_contracts import DocumentAccess, DocumentSpec
 from copper_mvp.knowledge_store import KnowledgeStore
-from copper_mvp.research_memory import SessionMemory, MemoryCapture
+from copper_mvp.research_memory import MemoryCapture, SessionMemory
 from copper_mvp.research_store import ResearchStore
 from copper_mvp.storage import RunStore
 
@@ -22,6 +22,7 @@ SOURCE = "synthetic-source-v1"
 
 class FixtureEmbedding:
     signature = "memory-fixture-only"
+
     def encode(self, texts, *, query=False):
         return np.asarray([[1.0, 0.0] for _ in texts], dtype=np.float32)
 
@@ -29,24 +30,44 @@ class FixtureEmbedding:
 def setup(tmp_path, context=None):
     runs = RunStore(tmp_path)
     research = ResearchStore(runs)
-    wb = SimpleNamespace(root=tmp_path, store=runs, data=SimpleNamespace(dataset_version="dataset-v1"),
-                         knowledge=KnowledgeStore(tmp_path, FixtureEmbedding()))
+    wb = SimpleNamespace(
+        root=tmp_path,
+        store=runs,
+        data=SimpleNamespace(dataset_version="dataset-v1"),
+        knowledge=KnowledgeStore(tmp_path, FixtureEmbedding()),
+    )
     memory = SessionMemory(wb, research)
     session = research.create_session(USER, "合成研究会话", context or {})
     return wb, research, memory, session["id"]
 
 
 def complete(research, session_id, request_key, value=731.246, context=None, question="核对合成事件", unit="g/L"):
-    request = {"question": question, "request_key": request_key, "context": context or {},
-               "source_version": SOURCE, "dataset_version": "dataset-v1", "app_version": "synthetic-app",
-               "settings": {"max_cost_cny": 0.5, "max_calls": 4, "max_tool_calls": 6}}
+    request = {
+        "question": question,
+        "request_key": request_key,
+        "context": context or {},
+        "source_version": SOURCE,
+        "dataset_version": "dataset-v1",
+        "app_version": "synthetic-app",
+        "settings": {"max_cost_cny": 0.5, "max_calls": 4, "max_tool_calls": 6},
+    }
     task, _ = research.create_task(USER, session_id, request)
     fence = research.claim(task["id"], "fixture-worker")
-    evidence = research.add_evidence(task["id"], "fixture-worker", fence, "event_context",
-                {"summary": {"decision_at": "2025-03-01T00:00:00Z", "model_version": "synthetic-model-v1"},
-                 "local_facts": {"current_cu": {"value": value, "unit": unit}}},
-                 SOURCE, request_key)
-    research.finish(task["id"], "fixture-worker", fence, {"answer": "合成结果", "evidence_ids": [evidence["evidence_id"]]}, 1)
+    evidence = research.add_evidence(
+        task["id"],
+        "fixture-worker",
+        fence,
+        "event_context",
+        {
+            "summary": {"decision_at": "2025-03-01T00:00:00Z", "model_version": "synthetic-model-v1"},
+            "local_facts": {"current_cu": {"value": value, "unit": unit}},
+        },
+        SOURCE,
+        request_key,
+    )
+    research.finish(
+        task["id"], "fixture-worker", fence, {"answer": "合成结果", "evidence_ids": [evidence["evidence_id"]]}, 1
+    )
     return task["id"], evidence
 
 
@@ -85,7 +106,10 @@ def test_new_task_and_corrupted_summary_are_repaired_from_authority(tmp_path):
     assert restored["summary"]["selected"]["approvals"] == []
     assert restored["summary"]["tasks"][0]["evidence"][0]["local_facts"]["current_cu"]["value"] == 52.125
     with research.connection() as c:
-        assert c.execute("SELECT action FROM memory_audit ORDER BY id DESC LIMIT 1").fetchone()[0] == "repair_from_authority"
+        assert (
+            c.execute("SELECT action FROM memory_audit ORDER BY id DESC LIMIT 1").fetchone()[0]
+            == "repair_from_authority"
+        )
     with pytest.raises(ValidationError):
         MemoryCapture.model_validate({"ttl_hours": 24, "approved": True})
 
@@ -95,8 +119,14 @@ def test_expiry_forget_and_cross_owner_access(tmp_path):
     complete(research, session, "first")
     memory.capture(USER, session, current_source=SOURCE)
     with research.connection() as c:
-        c.execute("UPDATE session_memories SET created_at='2000-01-01T00:00:00+00:00',expires_at='2000-01-08T00:00:00+00:00'")
-    assert memory.restore(USER, session, SOURCE) == {"status": "expired", "summary": None, "expires_at": "2000-01-08T00:00:00+00:00"}
+        c.execute(
+            "UPDATE session_memories SET created_at='2000-01-01T00:00:00+00:00',expires_at='2000-01-08T00:00:00+00:00'"
+        )
+    assert memory.restore(USER, session, SOURCE) == {
+        "status": "expired",
+        "summary": None,
+        "expires_at": "2000-01-08T00:00:00+00:00",
+    }
     assert memory.restore(USER, session, SOURCE, refresh=True)["status"] == "refreshed"
     with pytest.raises(WorkbenchError):
         memory.restore(Principal("another", "owner"), session, SOURCE)
@@ -108,11 +138,22 @@ def test_expiry_forget_and_cross_owner_access(tmp_path):
 
 def test_document_bookmark_is_revalidated_and_never_copies_document_body(tmp_path):
     wb, research, memory, session = setup(tmp_path)
-    spec = DocumentSpec.model_validate({"doc_id": "sop-fixture", "title": "合成文档", "author": "fixture",
-        "source": "synthetic fixture", "authorization": "local test", "license": "synthetic",
-        "version_label": "v1", "format": "md", "effective_at": "2025-01-01T00:00:00Z", "readers": [USER.user_id]})
+    spec = DocumentSpec.model_validate(
+        {
+            "doc_id": "sop-fixture",
+            "title": "合成文档",
+            "author": "fixture",
+            "source": "synthetic fixture",
+            "authorization": "local test",
+            "license": "synthetic",
+            "version_label": "v1",
+            "format": "md",
+            "effective_at": "2025-01-01T00:00:00Z",
+            "readers": [USER.user_id],
+        }
+    )
     wb.knowledge.register(OWNER, spec)
-    wb.knowledge.upload(OWNER, spec.doc_id, 1, "SYNTHETIC-PRIVATE-DOCUMENT-BODY-8137".encode())
+    wb.knowledge.upload(OWNER, spec.doc_id, 1, b"SYNTHETIC-PRIVATE-DOCUMENT-BODY-8137")
     wb.knowledge.build_index(OWNER, spec.doc_id, 1)
     citation = wb.knowledge.search(USER, "8137")["items"][0]["citation"]
     bookmark = {key: citation[key] for key in ("chunk_id", "hash", "parse_hash")}
@@ -141,7 +182,8 @@ def test_missing_unit_and_source_changes_are_not_silently_reused(tmp_path):
     assert error.value.code == "MEMORY_FACT_UNIT"
     with research.connection() as c:
         row = c.execute("SELECT * FROM research_evidence").fetchone()
-        payload = json.loads(row["payload_json"]); payload["local_facts"]["current_cu"]["unit"] = "g/L"
+        payload = json.loads(row["payload_json"])
+        payload["local_facts"]["current_cu"]["unit"] = "g/L"
         hashed = digest({"tool": row["tool"], "payload": payload, "source": row["source_version"]})
         c.execute("UPDATE research_evidence SET payload_json=?,content_hash=?", (dumps(payload), hashed))
     result = memory.capture(USER, session, current_source="new-source-version")
@@ -166,16 +208,23 @@ def test_memory_reads_real_approval_and_revocation_without_granting_actions(tmp_
     from copper_mvp.control.commands import CommandService
     from copper_mvp.control.contracts import POINTS
     from copper_mvp.control.mock import MockDevice
+
     wb, research, memory, _ = setup(tmp_path)
     access = AccessControl(research)
-    actor = access.authenticate(key=access.owner_key_path.read_text().strip())
+    actor = access.authenticate(key=access.owner_key_path.read_text(encoding="utf-8").strip())
     device = MockDevice(tmp_path / "synthetic-device")
     client = SimpleNamespace(read_state=device.read_state, close=lambda: None)
     commands = CommandService(wb.store, access, client, autostart=False)
     wb.control = commands
     try:
-        proposal = commands.propose(actor, {"request_key": "memory-approval",
-            "targets": [{"point_id": POINTS[0], "value": 105, "unit": "A"}], "reason": "synthetic memory test"})
+        proposal = commands.propose(
+            actor,
+            {
+                "request_key": "memory-approval",
+                "targets": [{"point_id": POINTS[0], "value": 105, "unit": "A"}],
+                "reason": "synthetic memory test",
+            },
+        )
         session = research.create_session(actor, "审批记忆", {"control_command_ids": [proposal["id"]]})["id"]
         captured = memory.capture(actor, session, current_source=SOURCE)
         assert captured["summary"]["selected"]["approvals"][0]["approval"] is None
@@ -195,8 +244,13 @@ def test_memory_reads_real_approval_and_revocation_without_granting_actions(tmp_
 
 def test_selected_run_constraints_are_reloaded_and_only_hashed_in_memory(tmp_path):
     wb, research, memory, session = setup(tmp_path)
-    request = {"request_key": "selected-run", "task_type": "optimize",
-               "model_profile": "Persistence", "as_allowance_mg_l": 4.125, "range_fraction": 0.1}
+    request = {
+        "request_key": "selected-run",
+        "task_type": "optimize",
+        "model_profile": "Persistence",
+        "as_allowance_mg_l": 4.125,
+        "range_fraction": 0.1,
+    }
     run, _ = wb.store.create(request, digest(request))
     complete(research, session, "constrained", context={"optimization_run_id": run["run_id"]})
     captured = memory.capture(USER, session, current_source=SOURCE)

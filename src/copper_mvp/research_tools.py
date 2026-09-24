@@ -1,9 +1,9 @@
 """Read-only business tools for free questions; raw event values stay local."""
+
 from __future__ import annotations
 
 import json
 import re
-from pathlib import Path
 from typing import Literal
 
 import numpy as np
@@ -46,7 +46,10 @@ class ProbeArguments(ReferenceArguments):
 
 
 TOOLS = {
-    "search_documents": (KnowledgeSearchArguments, "在当前权限和时间范围内检索本地文档，返回引用及可本机展示的原文占位符。"),
+    "search_documents": (
+        KnowledgeSearchArguments,
+        "在当前权限和时间范围内检索本地文档，返回引用及可本机展示的原文占位符。",
+    ),
     "read_document": (ReferenceArguments, "回读一个文档引用；正文由本机展示，不发送到模型提供商。"),
     "project_status": (Arguments, "读取工作台当前能力、方法目录和可用数据范围。"),
     "list_model_comparisons": (Arguments, "列出最近的模型比较，返回可继续查询的匿名引用。"),
@@ -61,8 +64,13 @@ TOOLS = {
 
 
 def definitions():
-    return [{"type": "function", "function": {"name": name, "description": description,
-             "parameters": schema.model_json_schema()}} for name, (schema, description) in TOOLS.items()]
+    return [
+        {
+            "type": "function",
+            "function": {"name": name, "description": description, "parameters": schema.model_json_schema()},
+        }
+        for name, (schema, description) in TOOLS.items()
+    ]
 
 
 class ResearchTools:
@@ -82,8 +90,12 @@ class ResearchTools:
 
     def resolve(self, reference, kind):
         if reference == "selected":
-            field = {"O": "optimization_run_id", "M": "model_comparison_id",
-                     "C": "optimizer_comparison_id", "E": "event_id"}[kind]
+            field = {
+                "O": "optimization_run_id",
+                "M": "model_comparison_id",
+                "C": "optimizer_comparison_id",
+                "E": "event_id",
+            }[kind]
             identifier = self.context.get(field)
             if identifier:
                 self.register(kind, identifier)
@@ -103,32 +115,52 @@ class ResearchTools:
         parsed = TOOLS[name][0].model_validate(arguments)
         params = parsed.model_dump(exclude={"purpose"}, mode="python")
         payload = getattr(self, name)(**params)
-        return {"summary": safe(payload["summary"] if "local_facts" in payload else payload),
-                "local_facts": safe(payload.get("local_facts", {})), "_resource_refs": dict(self.references)}
+        return {
+            "summary": safe(payload["summary"] if "local_facts" in payload else payload),
+            "local_facts": safe(payload.get("local_facts", {})),
+            "_resource_refs": dict(self.references),
+        }
 
     def project_status(self):
         data = self.wb.data
         models, optimizers = catalog(), optimizer_catalog()
-        return {"version": APP_VERSION,
-                "targets": [{"name": "cu", "unit": "g/L"}, {"name": "as", "unit": "mg/L"}],
-                "models": {"count": len(models["items"]), "items": [
-                    {"method_id": row["method_id"], "status": row["status"]} for row in models["items"]]},
-                "optimizers": {"count": len(optimizers["items"]), "items": [
-                    {"optimizer_id": row["optimizer_id"], "status": row["status"]} for row in optimizers["items"]]},
-                "development_events": len(data.frame), "oof_events": len(data.fold_for),
-                "data_period": {"start": source_time(data.frame.decision_at.min()).isoformat(),
-                                "end": source_time(data.frame.decision_at.max()).isoformat()},
-                "available_operations": ["模型指标查询", "优化结果比较", "原范围数值探测", "事件工况查询"],
-                "process_values": "observations", "tool_effects": "read_only"}
+        return {
+            "version": APP_VERSION,
+            "targets": [{"name": "cu", "unit": "g/L"}, {"name": "as", "unit": "mg/L"}],
+            "models": {
+                "count": len(models["items"]),
+                "items": [{"method_id": row["method_id"], "status": row["status"]} for row in models["items"]],
+            },
+            "optimizers": {
+                "count": len(optimizers["items"]),
+                "items": [
+                    {"optimizer_id": row["optimizer_id"], "status": row["status"]} for row in optimizers["items"]
+                ],
+            },
+            "development_events": len(data.frame),
+            "oof_events": len(data.fold_for),
+            "data_period": {
+                "start": source_time(data.frame.decision_at.min()).isoformat(),
+                "end": source_time(data.frame.decision_at.max()).isoformat(),
+            },
+            "available_operations": ["模型指标查询", "优化结果比较", "原范围数值探测", "事件工况查询"],
+            "process_values": "observations",
+            "tool_effects": "read_only",
+        }
 
     def list_model_comparisons(self):
         rows = []
         for state in self.models.list()[:8]:
             if state["status"] == "completed":
                 value = self.models.get(state["run_id"])["result"]
-                rows.append({"reference": self.register("M", state["run_id"]),
-                             "methods": value["methods"], "common_events": value["common_events"],
-                             "evaluation_mode": value["evaluation_mode"]})
+                rows.append(
+                    {
+                        "reference": self.register("M", state["run_id"]),
+                        "methods": value["methods"],
+                        "common_events": value["common_events"],
+                        "evaluation_mode": value["evaluation_mode"],
+                    }
+                )
         return {"items": rows}
 
     def model_metrics(self, reference="selected", as_of=None):
@@ -136,7 +168,11 @@ class ResearchTools:
         record = self.models.get(identifier)["result"]
         root = self.models.directory(identifier)
         _, protocol = read_training(root)
-        bound = source_time(self.context["as_of"]) if self.context.get("as_of") else source_time(protocol["evaluation_as_of"])
+        bound = (
+            source_time(self.context["as_of"])
+            if self.context.get("as_of")
+            else source_time(protocol["evaluation_as_of"])
+        )
         cutoff = source_time(as_of) if as_of else bound
         if cutoff > bound:
             raise WorkbenchError("查询截止超出本任务时间范围", "AS_OF_SCOPE")
@@ -144,8 +180,14 @@ class ResearchTools:
         visible = ledger.latest(cutoff)
         frame = pd.read_csv(root / "oof_predictions.csv")
         methods = record["methods"]
-        events = {e for e in self.wb.data.fold_for if all((e, t) in visible and visible[(e, t)].quality_eligible
-                  and visible[(e, t)].value is not None for t in ("cu", "as"))}
+        events = {
+            e
+            for e in self.wb.data.fold_for
+            if all(
+                (e, t) in visible and visible[(e, t)].quality_eligible and visible[(e, t)].value is not None
+                for t in ("cu", "as")
+            )
+        }
         frames = {}
         for method in methods:
             rows = frame[frame.method_id.eq(method)].set_index("event_id")
@@ -158,31 +200,58 @@ class ResearchTools:
             for target, unit in (("cu", "g/L"), ("as", "mg/L")):
                 actual = np.array([visible[(e, target)].value for e in ids])
                 predicted = frames[method].loc[ids, target].to_numpy(float)
-                metrics.append({"method": method, "target": target, "unit": unit, "n": len(ids),
-                    "mae": float(np.abs(predicted - actual).mean()) if len(ids) else None,
-                    "rmse": float(np.sqrt(np.square(predicted - actual).mean())) if len(ids) else None})
+                metrics.append(
+                    {
+                        "method": method,
+                        "target": target,
+                        "unit": unit,
+                        "n": len(ids),
+                        "mae": float(np.abs(predicted - actual).mean()) if len(ids) else None,
+                        "rmse": float(np.sqrt(np.square(predicted - actual).mean())) if len(ids) else None,
+                    }
+                )
         for metric in metrics:
-            baseline = next((m["mae"] for m in metrics if m["method"] == "Persistence" and m["target"] == metric["target"]), None)
-            metric["mae_difference_vs_persistence"] = metric["mae"] - baseline if metric["mae"] is not None and baseline is not None else None
-        return {"reference": self.register("M", identifier), "as_of": cutoff.isoformat(),
-                "status": "READY" if len(ids) >= 60 else "INSUFFICIENT_LABELS",
-                "common_events": len(ids), "metrics": metrics, "automatic_promotion": False}
+            baseline = next(
+                (m["mae"] for m in metrics if m["method"] == "Persistence" and m["target"] == metric["target"]), None
+            )
+            metric["mae_difference_vs_persistence"] = (
+                metric["mae"] - baseline if metric["mae"] is not None and baseline is not None else None
+            )
+        return {
+            "reference": self.register("M", identifier),
+            "as_of": cutoff.isoformat(),
+            "status": "READY" if len(ids) >= 60 else "INSUFFICIENT_LABELS",
+            "common_events": len(ids),
+            "metrics": metrics,
+            "automatic_promotion": False,
+        }
 
     def list_optimizations(self):
         original = []
         for run in self.wb.store.list("optimize", limit=30):
             if run["status"] == "completed" and run["request"].get("mode", "plant") == "plant":
                 result = self.wb.store.get(run["run_id"])["result"]
-                original.append({"reference": self.register("O", run["run_id"]),
-                                 "front_points": result["total_front_points"], "model_scope": result["model_scope"]})
+                original.append(
+                    {
+                        "reference": self.register("O", run["run_id"]),
+                        "front_points": result["total_front_points"],
+                        "model_scope": result["model_scope"],
+                    }
+                )
                 if len(original) == 6:
                     break
         comparisons = []
         root = self.wb.root / "optimizer_comparisons"
         for path in sorted(root.glob("*/comparison.json"), key=lambda p: p.stat().st_mtime, reverse=True)[:6]:
             result = json.loads(path.read_text(encoding="utf-8"))
-            comparisons.append({"reference": self.register("C", path.parent.name),
-                                "cases": result["cases"], "optimizers": result["optimizers"], "runs": result["runs"]})
+            comparisons.append(
+                {
+                    "reference": self.register("C", path.parent.name),
+                    "cases": result["cases"],
+                    "optimizers": result["optimizers"],
+                    "runs": result["runs"],
+                }
+            )
         return {"original_runs": original, "optimizer_comparisons": comparisons}
 
     def diagnostic(self, reference):
@@ -196,8 +265,11 @@ class ResearchTools:
         return self.probes[identifier]
 
     def optimization_summary(self, reference="selected"):
-        comparison = (reference.startswith("C-") or
-                      (reference == "selected" and self.context.get("optimizer_comparison_id") and not self.context.get("optimization_run_id")))
+        comparison = reference.startswith("C-") or (
+            reference == "selected"
+            and self.context.get("optimizer_comparison_id")
+            and not self.context.get("optimization_run_id")
+        )
         if not comparison:
             return self.diagnostic(reference).inspect_run()
         identifier = self.resolve(reference, "C")
@@ -209,7 +281,11 @@ class ResearchTools:
         if self.context.get("as_of"):
             # Compare only instances whose historical event is already known.
             cutoff = source_time(self.context["as_of"])
-            rows = [r for r in rows if not r["event_id"] or source_time(self.wb.data.row(r["event_id"]).decision_at) <= cutoff]
+            rows = [
+                r
+                for r in rows
+                if not r["event_id"] or source_time(self.wb.data.row(r["event_id"]).decision_at) <= cutoff
+            ]
         frame = pd.DataFrame(rows)
         summaries = []
         if len(frame):
@@ -218,14 +294,23 @@ class ResearchTools:
                 paired = part.set_index(["case", "seed"])
                 common = paired.index.intersection(baseline.index)
                 difference = paired.loc[common, "hv"].to_numpy() - baseline.loc[common, "hv"].to_numpy()
-                summaries.append({"optimizer": method, "runs": len(part),
-                    "wins_vs_nsga2": int((difference > 1e-10).sum()),
-                    "ties_vs_nsga2": int((np.abs(difference) <= 1e-10).sum()),
-                    "losses_vs_nsga2": int((difference < -1e-10).sum()),
-                    "median_ms": float(part.elapsed_ms.median()),
-                    "median_front_points": float(part.verified_front_points.median()),
-                    "max_evaluations": int(part.total_evaluations.max())})
-        return {"reference": self.register("C", identifier), "summary": summaries, "comparison_basis": "paired_case_and_seed"}
+                summaries.append(
+                    {
+                        "optimizer": method,
+                        "runs": len(part),
+                        "wins_vs_nsga2": int((difference > 1e-10).sum()),
+                        "ties_vs_nsga2": int((np.abs(difference) <= 1e-10).sum()),
+                        "losses_vs_nsga2": int((difference < -1e-10).sum()),
+                        "median_ms": float(part.elapsed_ms.median()),
+                        "median_front_points": float(part.verified_front_points.median()),
+                        "max_evaluations": int(part.total_evaluations.max()),
+                    }
+                )
+        return {
+            "reference": self.register("C", identifier),
+            "summary": summaries,
+            "comparison_basis": "paired_case_and_seed",
+        }
 
     def probe_constraints(self, reference="selected", points_per_axis=17, axis="joint"):
         return self.diagnostic(reference).probe_constraints(points_per_axis)
@@ -244,17 +329,24 @@ class ResearchTools:
         result = self.wb.knowledge.search(self.principal, query, cutoff, rerank=rerank)
         items, facts = [], {}
         for i, item in enumerate(result["items"], 1):
-            citation = {key: item["citation"][key] for key in
-                        ("doc_id", "version", "chunk_id", "hash", "parse_hash", "as_of")}
+            citation = {
+                key: item["citation"][key] for key in ("doc_id", "version", "chunk_id", "hash", "parse_hash", "as_of")
+            }
             citation["scope_as_of"] = cutoff.isoformat() if cutoff else None
             alias = self.register("K", citation["chunk_id"])
             self.references[alias]["citation"] = citation
             name = "document_excerpt_" + str(i)
             facts[name] = {"kind": "document_reference", "citation": citation}
             items.append({"reference": alias, "kind": item["kind"], "local_fact_name": name})
-        return {"summary": {"items": items, "local_fact_names": list(facts),
-                            "source_text_location": "local_only", "query_scope": "project_acl_and_effective_time"},
-                "local_facts": facts}
+        return {
+            "summary": {
+                "items": items,
+                "local_fact_names": list(facts),
+                "source_text_location": "local_only",
+                "query_scope": "project_acl_and_effective_time",
+            },
+            "local_facts": facts,
+        }
 
     def read_document(self, reference="selected"):
         if reference == "selected":
@@ -278,30 +370,46 @@ class ResearchTools:
             raise WorkbenchError("文档引用内容已改变，请重新检索", "SOURCE_CHANGED")
         clean = {key: actual[key] for key in ("doc_id", "version", "chunk_id", "hash", "parse_hash", "as_of")}
         clean["scope_as_of"] = cutoff.isoformat() if cutoff else None
-        return {"summary": {"local_fact_names": ["document_excerpt"], "source_text_location": "local_only"},
-                "local_facts": {"document_excerpt": {"kind": "document_reference", "citation": clean}}}
+        return {
+            "summary": {"local_fact_names": ["document_excerpt"], "source_text_location": "local_only"},
+            "local_facts": {"document_excerpt": {"kind": "document_reference", "citation": clean}},
+        }
 
     def event_context(self, reference="selected"):
         identifier = self.resolve(reference, "E")
         context = self.wb.data.context(identifier)
         if self.context.get("as_of") and source_time(context["decision_at"]) > source_time(self.context["as_of"]):
             raise WorkbenchError("事件晚于任务截止", "AS_OF_SCOPE")
-        return {"summary": {"reference": self.register("E", identifier), "decision_at": source_time(context["decision_at"]).isoformat(),
-                   "mode": context["mode"], "admission_status": context["admission_status"],
-                   "warnings": context["warnings"], "feature_count": context["feature_count"],
-                   "local_fact_names": ["current_cu", "current_as"]},
-                "local_facts": {"current_cu": {"value": context["cu"], "unit": "g/L"},
-                                "current_as": {"value": context["as"], "unit": "mg/L"}}}
+        return {
+            "summary": {
+                "reference": self.register("E", identifier),
+                "decision_at": source_time(context["decision_at"]).isoformat(),
+                "mode": context["mode"],
+                "admission_status": context["admission_status"],
+                "warnings": context["warnings"],
+                "feature_count": context["feature_count"],
+                "local_fact_names": ["current_cu", "current_as"],
+            },
+            "local_facts": {
+                "current_cu": {"value": context["cu"], "unit": "g/L"},
+                "current_as": {"value": context["as"], "unit": "mg/L"},
+            },
+        }
 
 
 def public_evidence(evidence):
     payload = evidence["data"]
-    return {"evidence_id": evidence["evidence_id"], "tool": evidence["tool"],
-            "data": payload["summary"], "local_fact_names": list(payload.get("local_facts", {}))}
+    return {
+        "evidence_id": evidence["evidence_id"],
+        "tool": evidence["tool"],
+        "data": payload["summary"],
+        "local_fact_names": list(payload.get("local_facts", {})),
+    }
 
 
 def render_answer(template, evidence, document_resolver=None):
     lookup = {e["evidence_id"]: e["data"].get("local_facts", {}) for e in evidence}
+
     def replace(match):
         identifier, field = match.groups()
         fact = lookup.get(identifier, {}).get(field)
@@ -310,4 +418,5 @@ def render_answer(template, evidence, document_resolver=None):
         if fact.get("kind") == "document_reference":
             return document_resolver(fact["citation"]) if document_resolver else match.group(0)
         return "缺测" if fact["value"] is None else f"{fact['value']:.6g} {fact['unit']}"
+
     return re.sub(r"\{\{(E-[a-f0-9]+)\.([A-Za-z_][A-Za-z0-9_]*)\}\}", replace, template)

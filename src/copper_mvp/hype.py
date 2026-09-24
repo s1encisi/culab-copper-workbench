@@ -4,6 +4,7 @@ Reference: Bader and Zitzler, HypE, Evolutionary Computation 19(1), 2011.
 The allocation weights and split-front deletion follow the HypE algorithm,
 with a shared fixed reference and feasibility-first adaptation for this project.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -19,18 +20,19 @@ def allocation_weights(population_size, k):
     if population_size and k > 0:
         alpha[1] = 1.0
         for count in range(2, min(k, population_size) + 1):
-            alpha[count] = alpha[count-1] * (k-count+1) / (population_size-count+1) * (count-1) / count
+            alpha[count] = alpha[count - 1] * (k - count + 1) / (population_size - count + 1) * (count - 1) / count
     return alpha
 
 
 class ExactHypEGeometry:
     """A disjoint rectangle partition remains exact as points are removed."""
+
     def __init__(self, objectives, reference):
         self.F = np.asarray(objectives, dtype=float)
         self.reference = np.asarray(reference, dtype=float)
         if self.F.ndim != 2 or self.F.shape[1] != 2 or self.reference.shape != (2,):
             raise ValueError("Exact HypE requires a two-objective matrix and reference")
-        eligible = self.F[np.all(self.F < self.reference, axis=1)]
+        eligible = self.F[np.all(self.reference > self.F, axis=1)]
         if not len(eligible):
             self.cover = np.empty((len(self.F), 0), dtype=bool)
             self.areas = np.empty(0)
@@ -92,10 +94,15 @@ class HypESurvival(Survival):
 
 class HypE(GeneticAlgorithm):
     """Exact 2-D HypE fitness for mating and k-dependent split-front deletion."""
+
     def __init__(self, reference, **kwargs):
         self.reference = np.asarray(reference, dtype=float)
-        super().__init__(selection=TournamentSelection(func_comp=hype_tournament),
-                         survival=HypESurvival(reference), advance_after_initial_infill=True, **kwargs)
+        super().__init__(
+            selection=TournamentSelection(func_comp=hype_tournament),
+            survival=HypESurvival(reference),
+            advance_after_initial_infill=True,
+            **kwargs,
+        )
 
     def _refresh_fitness(self):
         values = np.zeros(len(self.pop))

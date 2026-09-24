@@ -1,7 +1,9 @@
 """Exact command inputs for the synthetic current-control fixture."""
+
 from __future__ import annotations
 
 from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 DEVICE = "mock.cell3"

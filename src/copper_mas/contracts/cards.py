@@ -7,7 +7,6 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-
 CONTRACT_ID = "DHC_EVENT_SEQUENCE_V2_20260826"
 
 
@@ -30,7 +29,7 @@ class AsOfAdmissionCardV2(StrictCard):
     source_quality_warnings: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_as_of_boundary(self) -> "AsOfAdmissionCardV2":
+    def validate_as_of_boundary(self) -> AsOfAdmissionCardV2:
         if self.feature_cutoff_at > self.decision_at:
             raise ValueError("feature_cutoff_at 不能晚于 decision_at")
         if any(value < 0 for value in self.feature_group_counts.values()):
@@ -53,7 +52,7 @@ class ObservationItemV2(StrictCard):
     quality_code: str = "UNREVIEWED"
 
     @model_validator(mode="after")
-    def validate_missingness(self) -> "ObservationItemV2":
+    def validate_missingness(self) -> ObservationItemV2:
         if self.missing and self.value is not None:
             raise ValueError("missing=true 时 value 必须为空")
         if not self.missing and self.available_at is None:
@@ -69,7 +68,7 @@ class ObservationCardV2(StrictCard):
     observations: tuple[ObservationItemV2, ...]
 
     @model_validator(mode="after")
-    def validate_all_observations_are_known(self) -> "ObservationCardV2":
+    def validate_all_observations_are_known(self) -> ObservationCardV2:
         future = [
             item.canonical_tag
             for item in self.observations
@@ -89,7 +88,7 @@ class ForecastRequestV2(StrictCard):
     observations: ObservationCardV2
 
     @model_validator(mode="after")
-    def validate_identity(self) -> "ForecastRequestV2":
+    def validate_identity(self) -> ForecastRequestV2:
         if self.admission.origin_event_id != self.observations.origin_event_id:
             raise ValueError("准入卡与观察卡的 origin_event_id 不一致")
         if self.admission.decision_at != self.observations.decision_at:
@@ -117,7 +116,7 @@ class EvaluationEligibilityLedgerV2(StrictCard):
     evaluation_reason_codes: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_temporal_order(self) -> "EvaluationEligibilityLedgerV2":
+    def validate_temporal_order(self) -> EvaluationEligibilityLedgerV2:
         if self.target_recorded_at <= self.decision_at:
             raise ValueError("target_recorded_at 必须晚于 decision_at")
         expected = (self.target_recorded_at - self.decision_at).total_seconds() / 3600

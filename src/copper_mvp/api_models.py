@@ -1,7 +1,9 @@
 """G2a registered models and comparison APIs, separate from legacy model selection."""
+
 from __future__ import annotations
 
 import threading
+
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 

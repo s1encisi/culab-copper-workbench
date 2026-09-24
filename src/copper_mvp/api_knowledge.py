@@ -1,10 +1,19 @@
 """Authenticated local document and retrieval endpoints."""
+
 from fastapi import APIRouter, Request, Response
 from pydantic import AwareDatetime
 from starlette.concurrency import run_in_threadpool
 
 from copper_mvp.common import WorkbenchError
-from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess, DocumentReview, KnowledgeQuery, OCRRequest, DocumentCorrections, ReparseRequest
+from copper_mvp.knowledge_contracts import (
+    DocumentAccess,
+    DocumentCorrections,
+    DocumentReview,
+    DocumentSpec,
+    KnowledgeQuery,
+    OCRRequest,
+    ReparseRequest,
+)
 from copper_mvp.knowledge_parsing import MAX_BYTES
 from copper_mvp.research_documents import DisclosureConsent
 
@@ -119,10 +128,20 @@ def knowledge_router():
     def source(request: Request, doc_id: str, version: int, as_of: AwareDatetime | None = None):
         store, actor = service(request)
         raw, format = store.source(actor, doc_id, version, as_of)
-        media = {"md": "text/plain; charset=utf-8", "pdf": "application/pdf",
-                 "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document"}[format]
-        return Response(raw, media_type=media, headers={"Content-Disposition": f'attachment; filename="document-v{version}.{format}"',
-                                                       "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+        media = {
+            "md": "text/plain; charset=utf-8",
+            "pdf": "application/pdf",
+            "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }[format]
+        return Response(
+            raw,
+            media_type=media,
+            headers={
+                "Content-Disposition": f'attachment; filename="document-v{version}.{format}"',
+                "Cache-Control": "no-store",
+                "X-Content-Type-Options": "nosniff",
+            },
+        )
 
     @router.post("/search")
     def search(request: Request, payload: KnowledgeQuery):

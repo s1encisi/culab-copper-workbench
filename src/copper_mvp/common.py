@@ -6,7 +6,7 @@ import math
 import os
 import time
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +14,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 APP_VERSION = "0.26.0"
 WORKSPACE_ROOT = PROJECT_ROOT.parent
 DATA_DIR = PROJECT_ROOT / "data/development_2024_2025"
-EVIDENCE_DIR = WORKSPACE_ROOT / "04_多智能体项目/03_工程实现"
+EVIDENCE_DIR = WORKSPACE_ROOT / "05_前期研究与原型/03_工程实现"
 DEFAULT_RUNS_DIR = PROJECT_ROOT / "runs/mvp"
 
 
@@ -27,6 +27,7 @@ class WorkbenchError(ValueError):
 @dataclass(frozen=True)
 class LocalDataPaths:
     """Resolve private resources locally; HTTP clients cannot choose paths."""
+
     data_dir: Path
     evidence_dir: Path
     contract_dir: Path
@@ -37,6 +38,7 @@ class LocalDataPaths:
         def choose(explicit, variable, default):
             path = Path(explicit or os.environ.get(variable) or default).expanduser()
             return (path if path.is_absolute() else PROJECT_ROOT / path).resolve()
+
         data = choose(data_dir, "COPPER_MVP_DATA_DIR", DATA_DIR)
         evidence = choose(evidence_dir, "COPPER_MVP_EVIDENCE_DIR", EVIDENCE_DIR)
         contracts = choose(contract_dir, "COPPER_MVP_CONTRACT_DIR", PROJECT_ROOT / "configs/contracts")
@@ -57,7 +59,7 @@ class LocalDataPaths:
 
 
 def utc_now() -> str:
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def safe(value: Any) -> Any:

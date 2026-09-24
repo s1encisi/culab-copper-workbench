@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -29,9 +29,7 @@ class ExternalReleasePreparationError(RuntimeError):
     pass
 
 
-def _require_p0_current(
-    *, project_root: Path, gate_path: Path, report_path: Path
-) -> tuple[dict[str, Any], str]:
+def _require_p0_current(*, project_root: Path, gate_path: Path, report_path: Path) -> tuple[dict[str, Any], str]:
     report = json.loads(report_path.read_text(encoding="utf-8"))
     if report.get("passed") is not True:
         raise ExternalReleasePreparationError("P0 审计未通过")
@@ -42,25 +40,16 @@ def _require_p0_current(
     if hashes.get("external_release_gate") != actual_gate_hash:
         raise ExternalReleasePreparationError("P0 报告未绑定当前释放门")
     required_current = {
-        "v2_contract": project_root.parent
-        / "01_时间合同与A1数据准备/预测任务与时间对齐合同_V2.md",
-        "core_feature_contract": project_root
-        / "configs/contracts/core_features_v2.yaml",
-        "model_selection_protocol": project_root
-        / "contracts/frozen/model_selection_protocol_v1.yaml",
-        "selected_model_manifest": project_root
-        / "contracts/frozen/selected_model_manifest_v1.json",
+        "v2_contract": project_root.parent / "01_时间合同与A1数据准备/预测任务与时间对齐合同_V2.md",
+        "core_feature_contract": project_root / "configs/contracts/core_features_v2.yaml",
+        "model_selection_protocol": project_root / "contracts/frozen/model_selection_protocol_v1.yaml",
+        "selected_model_manifest": project_root / "contracts/frozen/selected_model_manifest_v1.json",
         "agent_graph": project_root / "configs/agents/graph_v1.yaml",
-        "manual_review_decision": project_root
-        / "artifacts/p1/review/manual_review_decision_v2.json",
-        "manual_review_workbook": project_root
-        / "artifacts/p1/review/铜电解电积P1人工抽核30条_V2.xlsx",
-        "external_evaluation_protocol": project_root
-        / "contracts/frozen/external_evaluation_protocol_v1.yaml",
-        "external_evaluator": project_root
-        / "src/copper_mas/evaluation/external_once.py",
-        "external_runtime_manifest": project_root
-        / "contracts/frozen/external_runtime_freeze_manifest_v1.json",
+        "manual_review_decision": project_root / "artifacts/p1/review/manual_review_decision_v2.json",
+        "manual_review_workbook": project_root / "artifacts/p1/review/铜电解电积P1人工抽核30条_V2.xlsx",
+        "external_evaluation_protocol": project_root / "contracts/frozen/external_evaluation_protocol_v1.yaml",
+        "external_evaluator": project_root / "src/copper_mas/evaluation/external_once.py",
+        "external_runtime_manifest": project_root / "contracts/frozen/external_runtime_freeze_manifest_v1.json",
     }
     for key, path in required_current.items():
         if not path.is_file() or hashes.get(key) != sha256_file(path):
@@ -92,9 +81,7 @@ def release_external_gate_atomically(
     p0_file = Path(p0_report_path).resolve()
     gate = load_external_release_gate(gate_file)
     if gate.status != "LOCKED_HUMAN_REVIEW_PENDING":
-        raise ExternalReleasePreparationError(
-            f"只能从 LOCKED_HUMAN_REVIEW_PENDING 释放: {gate.status}"
-        )
+        raise ExternalReleasePreparationError(f"只能从 LOCKED_HUMAN_REVIEW_PENDING 释放: {gate.status}")
     if claim_file.exists():
         raise ExternalReleasePreparationError("已存在 claim，禁止释放")
     if output_dir.exists():
@@ -102,9 +89,7 @@ def release_external_gate_atomically(
     if evidence_file.exists():
         raise ExternalReleasePreparationError("释放证据已存在，禁止重复释放")
 
-    p0_report, gate_hash_before = _require_p0_current(
-        project_root=root, gate_path=gate_file, report_path=p0_file
-    )
+    p0_report, gate_hash_before = _require_p0_current(project_root=root, gate_path=gate_file, report_path=p0_file)
     preflight = header_only_real_preflight(
         project_root=root,
         gate_path=gate_file,
@@ -130,7 +115,7 @@ def release_external_gate_atomically(
         "evidence_id": "EXTERNAL_2026_RELEASE_EVIDENCE_V1",
         "schema_version": "1.0",
         "authorized_release": True,
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "gate_status_before": gate.status,
         "gate_status_authorized_after": "RELEASED_FOR_SINGLE_EVALUATION",
         "gate_sha256_before_release": gate_hash_before,
@@ -157,9 +142,7 @@ def release_external_gate_atomically(
     try:
         evidence_relative = evidence_file.relative_to(root).as_posix()
     except ValueError as exc:
-        raise ExternalReleasePreparationError(
-            "释放证据必须位于项目根目录内"
-        ) from exc
+        raise ExternalReleasePreparationError("释放证据必须位于项目根目录内") from exc
     candidate_payload = gate.model_dump(mode="json")
     candidate_payload["status"] = "RELEASED_FOR_SINGLE_EVALUATION"
     candidate_payload["release_evidence_path"] = evidence_relative
@@ -171,9 +154,7 @@ def release_external_gate_atomically(
         review_decision_path=review_decision_path,
     )
     if sha256_file(gate_file) != gate_hash_before:
-        raise ExternalEvaluationTransactionError(
-            "释放门在释放前发生了并发修改"
-        )
+        raise ExternalEvaluationTransactionError("释放门在释放前发生了并发修改")
     encoded = yaml.safe_dump(
         candidate.model_dump(mode="json"),
         allow_unicode=True,

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import math
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass
+from datetime import UTC, datetime
 from time import perf_counter
-from typing import Any, Callable, Mapping
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -49,9 +50,7 @@ class OfflineGraphResult:
 PredictFunction = Callable[[Mapping[str, Any], ProcessModeCardV2], NumericPrediction]
 
 
-def fixed_offline_plan(
-    *, run_id: str, numeric_predictor_ref: str, post_freeze: bool = False
-) -> WorkflowPlanV1:
+def fixed_offline_plan(*, run_id: str, numeric_predictor_ref: str, post_freeze: bool = False) -> WorkflowPlanV1:
     """Kimi 不可用或被禁用时的确定性编排；节点顺序与权限不变。"""
 
     return WorkflowPlanV1(
@@ -72,7 +71,7 @@ def _record(
     status: str,
     reason_codes: tuple[str, ...] = (),
 ) -> AgentExecutionRecordV1:
-    ended_at = datetime.now(timezone.utc)
+    ended_at = datetime.now(UTC)
     return AgentExecutionRecordV1(
         run_id=run_id,
         agent_id=agent_id,
@@ -113,7 +112,7 @@ def run_offline_graph(
 
     records: list[AgentExecutionRecordV1] = []
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     started_perf = perf_counter()
     assert_no_future_information(request, decision_at=request.admission.decision_at)
     assert_no_future_information(feature_row, decision_at=request.admission.decision_at)
@@ -129,7 +128,7 @@ def run_offline_graph(
         )
     )
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     started_perf = perf_counter()
     mode = infer_process_mode(
         origin_event_id=request.admission.origin_event_id,
@@ -148,7 +147,7 @@ def run_offline_graph(
         )
     )
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     started_perf = perf_counter()
     numeric = predict(feature_row, mode)
     _validate_numeric_prediction(numeric)
@@ -171,7 +170,7 @@ def run_offline_graph(
         )
     )
 
-    started_at = datetime.now(timezone.utc)
+    started_at = datetime.now(UTC)
     started_perf = perf_counter()
     checks = (
         "CONTRACT_ID_MATCH",

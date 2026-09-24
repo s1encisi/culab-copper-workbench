@@ -21,7 +21,7 @@ class WorkflowPlanV1(_StrictRuntimeCard):
     external_test_access: Literal["DENIED", "POST_FREEZE_ONLY"]
 
     @model_validator(mode="after")
-    def validate_frozen_order(self) -> "WorkflowPlanV1":
+    def validate_frozen_order(self) -> WorkflowPlanV1:
         if self.ordered_nodes != ("A1", "A2", "A4", "A5"):
             raise ValueError("在线预测图节点顺序已冻结为 A1→A2→A4→A5")
         return self
@@ -48,7 +48,7 @@ class AgentExecutionRecordV1(_StrictRuntimeCard):
     reason_codes: tuple[str, ...] = ()
 
     @model_validator(mode="after")
-    def validate_time_and_engine(self) -> "AgentExecutionRecordV1":
+    def validate_time_and_engine(self) -> AgentExecutionRecordV1:
         if self.ended_at < self.started_at:
             raise ValueError("ended_at 不能早于 started_at")
         if self.engine in {"DETERMINISTIC", "LOCAL_NUMERIC_MODEL"}:
@@ -72,7 +72,7 @@ class ResourceLedgerV1(_StrictRuntimeCard):
     cost_limit_status: Literal["NOT_CONFIGURED", "WITHIN_LIMIT"] = "NOT_CONFIGURED"
 
     @model_validator(mode="after")
-    def validate_cost_limit(self) -> "ResourceLedgerV1":
+    def validate_cost_limit(self) -> ResourceLedgerV1:
         if self.run_cost_limit_cny is None:
             if self.cost_limit_status != "NOT_CONFIGURED":
                 raise ValueError("未配置单次成本上限时状态必须为 NOT_CONFIGURED")
@@ -90,7 +90,7 @@ class ResourceLedgerV1(_StrictRuntimeCard):
         records: tuple[AgentExecutionRecordV1, ...],
         *,
         run_cost_limit_cny: float | None = None,
-    ) -> "ResourceLedgerV1":
+    ) -> ResourceLedgerV1:
         return cls(
             run_id=run_id,
             records=records,
@@ -100,7 +100,5 @@ class ResourceLedgerV1(_StrictRuntimeCard):
             total_output_tokens=sum(item.output_tokens for item in records),
             total_estimated_cost_cny=sum(item.estimated_cost_cny for item in records),
             run_cost_limit_cny=run_cost_limit_cny,
-            cost_limit_status=(
-                "WITHIN_LIMIT" if run_cost_limit_cny is not None else "NOT_CONFIGURED"
-            ),
+            cost_limit_status=("WITHIN_LIMIT" if run_cost_limit_cny is not None else "NOT_CONFIGURED"),
         )

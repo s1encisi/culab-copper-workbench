@@ -1,7 +1,8 @@
 """G1 contracts: explicit historical clocks, units, and immutable label revisions."""
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Literal
 from zoneinfo import ZoneInfo
 
@@ -21,16 +22,25 @@ def source_time(value) -> datetime:
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(str(value))
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=SOURCE_TIMEZONE)
-    return parsed.astimezone(timezone.utc)
+    return parsed.astimezone(UTC)
 
 
 def envelope(schema: str, payload: dict, source_kind: str) -> dict:
-    content = {"schema_version": schema, "project_id": "copper-research",
-               "source_kind": source_kind, "payload": payload}
+    content = {
+        "schema_version": schema,
+        "project_id": "copper-research",
+        "source_kind": source_kind,
+        "payload": payload,
+    }
     signature = digest(content)
-    return {**content, "id": schema + ":" + signature, "content_hash": signature,
-            "created_at": utc_now(), "created_by": "local-data-service",
-            "trace_id": "evidence:" + signature}
+    return {
+        **content,
+        "id": schema + ":" + signature,
+        "content_hash": signature,
+        "created_at": utc_now(),
+        "created_by": "local-data-service",
+        "trace_id": "evidence:" + signature,
+    }
 
 
 class StrictRecord(BaseModel):
@@ -56,8 +66,7 @@ class TaskSpec(StrictRecord):
     decision_at: AwareDatetime
     feature_cutoff_at: AwareDatetime
     horizon: Literal["next_recorded_event"] = "next_recorded_event"
-    targets: tuple[TargetSpec, TargetSpec] = (
-        TargetSpec(name="cu", unit="g/L"), TargetSpec(name="as", unit="mg/L"))
+    targets: tuple[TargetSpec, TargetSpec] = (TargetSpec(name="cu", unit="g/L"), TargetSpec(name="as", unit="mg/L"))
     input_columns: tuple[str, ...]
     dataset_version: str
     feature_spec_version: str

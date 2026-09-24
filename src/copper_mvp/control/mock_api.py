@@ -1,18 +1,19 @@
 """Loopback-only Mock server with separate driver and test-admin credentials."""
+
 from __future__ import annotations
 
 import hmac
-from pathlib import Path
 import secrets
 import threading
 import time
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from copper_mvp.common import WorkbenchError
-from copper_mvp.control.contracts import DEVICE, NOTICE, DispatchInput, TickInput, FaultInput
+from copper_mvp.control.contracts import NOTICE, DispatchInput, FaultInput, TickInput
 from copper_mvp.control.mock import MockDevice
 
 
@@ -31,7 +32,7 @@ def create_mock_app(root: Path, *, manual_clock=False, seed=17):
 
     def advance():
         previous = time.monotonic()
-        while not stopped.wait(.2):
+        while not stopped.wait(0.2):
             now = time.monotonic()
             device.tick(min(60, now - previous))
             previous = now
@@ -81,7 +82,9 @@ def create_mock_app(root: Path, *, manual_clock=False, seed=17):
     def submit(payload: DispatchInput):
         receipt = device.submit_command(**payload.model_dump())
         if receipt["ack_lost"]:
-            return JSONResponse(status_code=504, content={"error": {"code": "UNKNOWN_OUTCOME", "message": "合成 ACK 丢失"}})
+            return JSONResponse(
+                status_code=504, content={"error": {"code": "UNKNOWN_OUTCOME", "message": "合成 ACK 丢失"}}
+            )
         receipt["ack_received"] = device.read_state()["virtual_time"] >= receipt["ack_at"]
         return receipt
 

@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
-from pathlib import Path
 import sys
+from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC = PROJECT_ROOT / "src"
@@ -52,20 +51,12 @@ def _scenario_summary(results: pd.DataFrame) -> pd.DataFrame:
                 "repeats": int(len(group)),
                 "is_fault": bool(group["is_fault"].iloc[0]),
                 "prediction_emitted_count": int(group["prediction_emitted"].sum()),
-                "unsafe_prediction_emitted_count": int(
-                    group["unsafe_prediction_emitted"].sum()
-                ),
+                "unsafe_prediction_emitted_count": int(group["unsafe_prediction_emitted"].sum()),
                 "failure_detected_count": int(group["failure_detected"].sum()),
-                "abstained_or_blocked_count": int(
-                    group["abstained_or_blocked"].sum()
-                ),
-                "unsafe_prediction_rate": float(
-                    group["unsafe_prediction_emitted"].mean()
-                ),
+                "abstained_or_blocked_count": int(group["abstained_or_blocked"].sum()),
+                "unsafe_prediction_rate": float(group["unsafe_prediction_emitted"].mean()),
                 "failure_detection_rate": float(group["failure_detected"].mean()),
-                "abstain_or_block_rate": float(
-                    group["abstained_or_blocked"].mean()
-                ),
+                "abstain_or_block_rate": float(group["abstained_or_blocked"].mean()),
                 "latency_p50_ms": _percentile(group["latency_ms"], 50),
                 "latency_p95_ms": _percentile(group["latency_ms"], 95),
                 "reason_codes": "|".join(sorted(set(group["reason_code"].astype(str)))),
@@ -85,15 +76,9 @@ def _system_summary(results: pd.DataFrame) -> pd.DataFrame:
                 "status": "EXECUTED_OFFLINE",
                 "evaluated_runs": int(len(group)),
                 "fault_runs": int(len(faults)),
-                "unsafe_prediction_rate_on_faults": float(
-                    faults["unsafe_prediction_emitted"].mean()
-                ),
-                "failure_detection_rate_on_faults": float(
-                    faults["failure_detected"].mean()
-                ),
-                "abstain_or_block_rate_on_faults": float(
-                    faults["abstained_or_blocked"].mean()
-                ),
+                "unsafe_prediction_rate_on_faults": float(faults["unsafe_prediction_emitted"].mean()),
+                "failure_detection_rate_on_faults": float(faults["failure_detected"].mean()),
+                "abstain_or_block_rate_on_faults": float(faults["abstained_or_blocked"].mean()),
                 "clean_prediction_pass_rate": float(clean["prediction_emitted"].mean()),
                 "latency_p50_ms_all": _percentile(group["latency_ms"], 50),
                 "latency_p95_ms_all": _percentile(group["latency_ms"], 95),
@@ -130,9 +115,7 @@ def _pct(value: float) -> str:
     return f"{value * 100:.1f}%"
 
 
-def _render_report(
-    *, repeats: int, scenarios: pd.DataFrame, system: pd.DataFrame
-) -> str:
+def _render_report(*, repeats: int, scenarios: pd.DataFrame, system: pd.DataFrame) -> str:
     direct = system.set_index("system").loc[DIRECT_SYSTEM]
     guarded = system.set_index("system").loc[GUARDED_SYSTEM]
     direct_p50 = float(direct["latency_p50_ms_all"])
@@ -144,67 +127,142 @@ def _render_report(
     for row in scenarios.itertuples(index=False):
         fault_text = "故障" if bool(getattr(row, "是否故障")) else "正常对照"
         scenario_lines.append(
-            f"| {row.scenario_id} | {getattr(row, '场景名称')} | {fault_text} | "
-            f"{getattr(row, '预期防护原因码')} |"
+            f"| {row.scenario_id} | {getattr(row, '场景名称')} | {fault_text} | {getattr(row, '预期防护原因码')} |"
         )
 
-    return f"""# P3 离线故障注入与安全消融报告 V1
-
-## 一、结论
-
-本轮只回答一个问题：多智能体工作流相对“直接固定预测”增加的价值，能否落实为可测的准入、审计和拒绝能力。结果表明，在 {len(scenarios) - 1} 类故障、每类 {repeats} 次重复的离线实验中：
-
-- `direct_fixed_predictor` 对故障输入的危险预测输出率为 {_pct(float(direct['unsafe_prediction_rate_on_faults']))}，故障发现率为 {_pct(float(direct['failure_detection_rate_on_faults']))}；这是有意移除安全层的消融基线。
-- `guarded_multi_agent_graph` 对故障输入的危险预测输出率为 {_pct(float(guarded['unsafe_prediction_rate_on_faults']))}，故障发现率和拒绝/弃权率均为 {_pct(float(guarded['failure_detection_rate_on_faults']))}。
-- 正常对照在两条路径上的预测通过率均为 {_pct(float(guarded['clean_prediction_pass_rate']))}，未出现“所有输入一律拒绝”的退化做法。
-- 全场景离线延迟中位数由 {direct_p50:.6f} ms 增至 {guarded_p50:.6f} ms，绝对增加 {overhead:.6f} ms，约为 {ratio:.2f} 倍。该数值只反映当前电脑、Python 进程和微秒级本地校验开销，不能外推为现场部署延迟。
-
-因此，这一实验支持的论文表述是：多智能体工作流通过合同化分工和独立审计减少不安全输出；它不支持“增加智能体就能提高 Cu/As 预测精度”的主张。数值精度仍应由同一冻结 A4 模型、同一数据与同一评价集单独比较。
-
-## 二、实验边界
-
-- 数据边界：只使用合成的 2025 开发期格式样本，不读取 2026 外部时序留出集，也不读取任何 `outcome_ledger`。
-- 模型边界：数值预测由本地固定函数产生；本实验不训练、不选择模型，也不计算 Cu/As 的 MAE、RMSE 或 R²。
-- LLM 边界：没有发起 Kimi 或 DeepSeek 调用；`live_calls=false` 场景在网络连接前被拒绝。`single_llm_agent` 仅登记为 `PENDING_AUTHORIZATION`，没有伪造对照结果。
-- 重复设计：11 个场景分别重复 {repeats} 次，另有 3 次不计入结果的预热；同一重复内交替两个系统的先后次序，并报告 p50/p95。
-- 安全指标：`unsafe_prediction_emitted` 表示在已知故障尚未被发现时仍产生正式预测；`failure_detected` 表示防护层给出稳定原因码；`abstained_or_blocked` 同时覆盖数据不足时的弃权和合同违规时的阻断。
-
-## 三、场景设计
-
-| 场景 ID | 场景 | 类型 | 防护图预期原因码 |
-|---|---|---|---|
-{chr(10).join(scenario_lines)}
-
-其中，三四段整组缺失被定义为 `ABSTAINED`，因为它属于信息不足；其余合同违规、模型篡改和非法输出被定义为 `BLOCKED`。正常对照必须通过完整 A1→A2→A4→A5 路径。
-
-## 四、比较结果
-
-| 系统 | 故障危险输出率 | 故障发现率 | 故障拒绝/弃权率 | 正常通过率 | p50 延迟(ms) | p95 延迟(ms) |
-|---|---:|---:|---:|---:|---:|---:|
-| direct_fixed_predictor | {_pct(float(direct['unsafe_prediction_rate_on_faults']))} | {_pct(float(direct['failure_detection_rate_on_faults']))} | {_pct(float(direct['abstain_or_block_rate_on_faults']))} | {_pct(float(direct['clean_prediction_pass_rate']))} | {float(direct['latency_p50_ms_all']):.6f} | {float(direct['latency_p95_ms_all']):.6f} |
-| guarded_multi_agent_graph | {_pct(float(guarded['unsafe_prediction_rate_on_faults']))} | {_pct(float(guarded['failure_detection_rate_on_faults']))} | {_pct(float(guarded['abstain_or_block_rate_on_faults']))} | {_pct(float(guarded['clean_prediction_pass_rate']))} | {float(guarded['latency_p50_ms_all']):.6f} | {float(guarded['latency_p95_ms_all']):.6f} |
-
-逐场景结果保存在 `scenario_summary_v1.csv`，每次重复的原始结果保存在 `per_run_results_v1.csv`。模型哈希篡改场景校验的是冻结标识与 SHA-256 一致性；LLM 两个场景分别校验离线开关和本地 Pydantic 输出合同。
-
-## 五、论文中可以与不可以写的内容
-
-可以写：
-
-1. 防护图在预定义故障集上实现了可追踪的 fail-closed 行为，并输出稳定原因码。
-2. 相比无防护固定预测器，防护图消除了本次故障集中的危险预测输出，代价是可量化的本地校验延迟。
-3. 多智能体的必要性来自职责隔离：A1 管准入，A2 管工况描述，A4 只执行冻结数值模型，A5 独立审计；LLM 不是数值预测器，也不能覆盖安全判断。
-
-不可以写：
-
-1. 不得把本实验解释为多智能体提升了 Cu/As 预测精度。
-2. 不得把合成故障的 100% 检出率外推为未知现场故障的 100% 检出率。
-3. 不得声称完成了单 LLM 智能体比较；该对照尚未获真实调用授权。
-4. 不得把微秒/毫秒级本地离线延迟等同于未来 API、网络或现场系统延迟。
-
-## 六、后续建议
-
-下一步可在不改变 2026 留出规则的前提下，将人工抽核发现的真实数据问题逐项加入场景库，并冻结场景版本。待密钥轮换、Kimi 地区和月度预算得到确认后，再单独运行 `single_llm_agent`；该结果必须记录模型、提示词版本、调用量、token、成本、失败率和 p50/p95，不能回填或虚构。
-"""
+    return (
+        "# P3 离线故障注入与安全消融报告 V1\n"
+        "\n"
+        "## 一、结论\n"
+        "\n"
+        "本轮只回答一个问题：多智能体工作流相对“直接固定预测”增加的价值，能"
+        "否落实为可测的准入、审计和拒绝能力。结果表明，在 "
+        f"{len(scenarios) - 1}"
+        " 类故障、每类 "
+        f"{repeats}"
+        " 次重复的离线实验中：\n"
+        "\n"
+        "- `direct_fixed_predictor` 对故障输入的危险预测输出率为 "
+        f"{_pct(float(direct['unsafe_prediction_rate_on_faults']))}"
+        "，故障发现率为 "
+        f"{_pct(float(direct['failure_detection_rate_on_faults']))}"
+        "；这是有意移除安全层的消融基线。\n"
+        "- `guarded_multi_agent_graph` 对故障输入的危险预测输出率为 "
+        f"{_pct(float(guarded['unsafe_prediction_rate_on_faults']))}"
+        "，故障发现率和拒绝/弃权率均为 "
+        f"{_pct(float(guarded['failure_detection_rate_on_faults']))}"
+        "。\n"
+        "- 正常对照在两条路径上的预测通过率均为 "
+        f"{_pct(float(guarded['clean_prediction_pass_rate']))}"
+        "，未出现“所有输入一律拒绝”的退化做法。\n"
+        "- 全场景离线延迟中位数由 "
+        f"{direct_p50:.6f}"
+        " ms 增至 "
+        f"{guarded_p50:.6f}"
+        " ms，绝对增加 "
+        f"{overhead:.6f}"
+        " ms，约为 "
+        f"{ratio:.2f}"
+        " 倍。该数值只反映当前电脑、Python 进程和微秒级本地校验开销，不能外"
+        "推为现场部署延迟。\n"
+        "\n"
+        "因此，这一实验支持的论文表述是：多智能体工作流通过合同化分工和独立"
+        "审计减少不安全输出；它不支持“增加智能体就能提高 Cu/As 预测精度”的"
+        "主张。数值精度仍应由同一冻结 A4 模型、同一数据与同一评价集单独比较"
+        "。\n"
+        "\n"
+        "## 二、实验边界\n"
+        "\n"
+        "- 数据边界：只使用合成的 2025 开发期格式样本，不读取 2026 外部时序"
+        "留出集，也不读取任何 `outcome_ledger`。\n"
+        "- 模型边界：数值预测由本地固定函数产生；本实验不训练、不选择模型，"
+        "也不计算 Cu/As 的 MAE、RMSE 或 R²。\n"
+        "- LLM 边界：没有发起 Kimi 或 DeepSeek 调用；`live_calls=false` 场"
+        "景在网络连接前被拒绝。`single_llm_agent` 仅登记为 `PENDING_AUTHORI"
+        "ZATION`，没有伪造对照结果。\n"
+        "- 重复设计：11 个场景分别重复 "
+        f"{repeats}"
+        " 次，另有 3 次不计入结果的预热；同一重复内交替两个系统的先后次序，"
+        "并报告 p50/p95。\n"
+        "- 安全指标：`unsafe_prediction_emitted` 表示在已知故障尚未被发现时"
+        "仍产生正式预测；`failure_detected` 表示防护层给出稳定原因码；`abst"
+        "ained_or_blocked` 同时覆盖数据不足时的弃权和合同违规时的阻断。\n"
+        "\n"
+        "## 三、场景设计\n"
+        "\n"
+        "| 场景 ID | 场景 | 类型 | 防护图预期原因码 |\n"
+        "|---|---|---|---|\n"
+        f"{chr(10).join(scenario_lines)}"
+        "\n"
+        "\n"
+        "其中，三四段整组缺失被定义为 `ABSTAINED`，因为它属于信息不足；其余"
+        "合同违规、模型篡改和非法输出被定义为 `BLOCKED`。正常对照必须通过完"
+        "整 A1→A2→A4→A5 路径。\n"
+        "\n"
+        "## 四、比较结果\n"
+        "\n"
+        "| 系统 | 故障危险输出率 | 故障发现率 | 故障拒绝/弃权率 | 正常通过"
+        "率 | p50 延迟(ms) | p95 延迟(ms) |\n"
+        "|---|---:|---:|---:|---:|---:|---:|\n"
+        "| direct_fixed_predictor | "
+        f"{_pct(float(direct['unsafe_prediction_rate_on_faults']))}"
+        " | "
+        f"{_pct(float(direct['failure_detection_rate_on_faults']))}"
+        " | "
+        f"{_pct(float(direct['abstain_or_block_rate_on_faults']))}"
+        " | "
+        f"{_pct(float(direct['clean_prediction_pass_rate']))}"
+        " | "
+        f"{float(direct['latency_p50_ms_all']):.6f}"
+        " | "
+        f"{float(direct['latency_p95_ms_all']):.6f}"
+        " |\n"
+        "| guarded_multi_agent_graph | "
+        f"{_pct(float(guarded['unsafe_prediction_rate_on_faults']))}"
+        " | "
+        f"{_pct(float(guarded['failure_detection_rate_on_faults']))}"
+        " | "
+        f"{_pct(float(guarded['abstain_or_block_rate_on_faults']))}"
+        " | "
+        f"{_pct(float(guarded['clean_prediction_pass_rate']))}"
+        " | "
+        f"{float(guarded['latency_p50_ms_all']):.6f}"
+        " | "
+        f"{float(guarded['latency_p95_ms_all']):.6f}"
+        " |\n"
+        "\n"
+        "逐场景结果保存在 `scenario_summary_v1.csv`，每次重复的原始结果保存"
+        "在 `per_run_results_v1.csv`。模型哈希篡改场景校验的是冻结标识与 SH"
+        "A-256 一致性；LLM 两个场景分别校验离线开关和本地 Pydantic 输出合同"
+        "。\n"
+        "\n"
+        "## 五、论文中可以与不可以写的内容\n"
+        "\n"
+        "可以写：\n"
+        "\n"
+        "1. 防护图在预定义故障集上实现了可追踪的 fail-closed 行为，并输出稳"
+        "定原因码。\n"
+        "2. 相比无防护固定预测器，防护图消除了本次故障集中的危险预测输出，"
+        "代价是可量化的本地校验延迟。\n"
+        "3. 多智能体的必要性来自职责隔离：A1 管准入，A2 管工况描述，A4 只执"
+        "行冻结数值模型，A5 独立审计；LLM 不是数值预测器，也不能覆盖安全判"
+        "断。\n"
+        "\n"
+        "不可以写：\n"
+        "\n"
+        "1. 不得把本实验解释为多智能体提升了 Cu/As 预测精度。\n"
+        "2. 不得把合成故障的 100% 检出率外推为未知现场故障的 100% 检出率。\n"
+        "3. 不得声称完成了单 LLM 智能体比较；该对照尚未获真实调用授权。\n"
+        "4. 不得把微秒/毫秒级本地离线延迟等同于未来 API、网络或现场系统延迟"
+        "。\n"
+        "\n"
+        "## 六、后续建议\n"
+        "\n"
+        "下一步可在不改变 2026 留出规则的前提下，将人工抽核发现的真实数据问"
+        "题逐项加入场景库，并冻结场景版本。待密钥轮换、Kimi 地区和月度预算"
+        "得到确认后，再单独运行 `single_llm_agent`；该结果必须记录模型、提"
+        "示词版本、调用量、token、成本、失败率和 p50/p95，不能回填或虚构。\n"
+    )
 
 
 def run_benchmark(output_dir: Path, *, repeats: int = 100) -> dict[str, Any]:
@@ -261,8 +319,7 @@ def run_benchmark(output_dir: Path, *, repeats: int = 100) -> dict[str, Any]:
     )
 
     hash_rows = [
-        {"artifact": path.name, "sha256": _sha256(path), "bytes": path.stat().st_size}
-        for path in paths.values()
+        {"artifact": path.name, "sha256": _sha256(path), "bytes": path.stat().st_size} for path in paths.values()
     ]
     hash_path = output_dir / "artifact_hashes_v1.csv"
     pd.DataFrame(hash_rows).to_csv(hash_path, index=False, encoding="utf-8-sig")
@@ -273,7 +330,7 @@ def run_benchmark(output_dir: Path, *, repeats: int = 100) -> dict[str, Any]:
     manifest: dict[str, Any] = {
         "schema_version": "1.0",
         "artifact_id": "P3_FAULT_INJECTION_SAFETY_ABLATION_V1",
-        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "created_at_utc": datetime.now(UTC).isoformat(),
         "scope": "DEVELOPMENT_OFFLINE_SAFETY_ONLY",
         "scenario_count": int(len(scenarios)),
         "fault_scenario_count": int(scenarios["是否故障"].sum()),
@@ -289,12 +346,8 @@ def run_benchmark(output_dir: Path, *, repeats: int = 100) -> dict[str, Any]:
         "target_values_read": 0,
         "accuracy_claim_made": False,
         "guarded_fault_detection_rate": float(guarded_faults["failure_detected"].mean()),
-        "guarded_unsafe_prediction_rate": float(
-            guarded_faults["unsafe_prediction_emitted"].mean()
-        ),
-        "direct_unsafe_prediction_rate": float(
-            direct_faults["unsafe_prediction_emitted"].mean()
-        ),
+        "guarded_unsafe_prediction_rate": float(guarded_faults["unsafe_prediction_emitted"].mean()),
+        "direct_unsafe_prediction_rate": float(direct_faults["unsafe_prediction_emitted"].mean()),
         "all_expectations_passed": True,
         "hash_inventory": hash_path.name,
         "artifact_hashes": {row["artifact"]: row["sha256"] for row in hash_rows},
@@ -324,12 +377,8 @@ def main() -> None:
                 "scenario_count": manifest["scenario_count"],
                 "fault_scenario_count": manifest["fault_scenario_count"],
                 "measured_run_count": manifest["measured_run_count"],
-                "guarded_fault_detection_rate": manifest[
-                    "guarded_fault_detection_rate"
-                ],
-                "guarded_unsafe_prediction_rate": manifest[
-                    "guarded_unsafe_prediction_rate"
-                ],
+                "guarded_fault_detection_rate": manifest["guarded_fault_detection_rate"],
+                "guarded_unsafe_prediction_rate": manifest["guarded_unsafe_prediction_rate"],
                 "external_2026_read": manifest["external_2026_read"],
                 "llm_calls_made": manifest["llm_calls_made"],
             },

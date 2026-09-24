@@ -10,7 +10,6 @@ import pandas as pd
 from copper_mas.contracts.cards import AsOfAdmissionCardV2
 from copper_mas.data.leakage import assert_no_future_information
 
-
 PROCESS_GROUPS = ("phase_1", "phase_2", "stage34")
 
 
@@ -114,9 +113,7 @@ def assemble_final_admission_cards(
             "missing_feature_groups",
             "source_quality_warnings",
         ):
-            payload[field] = json.dumps(
-                payload[field], ensure_ascii=False, sort_keys=True, separators=(",", ":")
-            )
+            payload[field] = json.dumps(payload[field], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         payload["core_process_4_of_7_ready"] = not missing_groups
         rows.append(payload)
     return pd.DataFrame(rows)
@@ -130,33 +127,22 @@ def build_training_evaluation_index(
 ) -> pd.DataFrame:
     """该表只供离线训练装配；绝不能作为 ForecastRequest。"""
 
-    pairs = pair_index[
-        ["pair_id", "origin_event_id", "origin_recorded_at", "origin_year", "pair_status"]
-    ].copy()
-    cards = final_cards[
-        ["origin_event_id", "admission_status", "core_process_4_of_7_ready"]
-    ].copy()
-    evaluations = evaluation_ledger[
-        ["pair_id", "prospectively_sampled", "evaluation_eligible"]
-    ].copy()
+    pairs = pair_index[["pair_id", "origin_event_id", "origin_recorded_at", "origin_year", "pair_status"]].copy()
+    cards = final_cards[["origin_event_id", "admission_status", "core_process_4_of_7_ready"]].copy()
+    evaluations = evaluation_ledger[["pair_id", "prospectively_sampled", "evaluation_eligible"]].copy()
     outcome_pairs = set(outcome_ledger["pair_id"].astype(str))
     result = pairs.merge(cards, on="origin_event_id", how="left", validate="many_to_one")
     result = result.merge(evaluations, on="pair_id", how="left", validate="one_to_one")
     result["outcome_present"] = result["pair_id"].astype(str).isin(outcome_pairs)
     result["runtime_prediction_available"] = result["admission_status"].ne("REJECTED")
-    result["tier0_labeled_development"] = (
-        result["runtime_prediction_available"] & result["outcome_present"]
+    result["tier0_labeled_development"] = result["runtime_prediction_available"] & result["outcome_present"]
+    result["tier0_primary_prospective"] = result["runtime_prediction_available"] & result["evaluation_eligible"].map(
+        _as_bool
     )
-    result["tier0_primary_prospective"] = (
-        result["runtime_prediction_available"]
-        & result["evaluation_eligible"].map(_as_bool)
-    )
-    result["tier1_core_labeled_development"] = (
-        result["tier0_labeled_development"]
-        & result["core_process_4_of_7_ready"].map(_as_bool)
-    )
-    result["tier1_core_primary_prospective"] = (
-        result["tier0_primary_prospective"]
-        & result["core_process_4_of_7_ready"].map(_as_bool)
-    )
+    result["tier1_core_labeled_development"] = result["tier0_labeled_development"] & result[
+        "core_process_4_of_7_ready"
+    ].map(_as_bool)
+    result["tier1_core_primary_prospective"] = result["tier0_primary_prospective"] & result[
+        "core_process_4_of_7_ready"
+    ].map(_as_bool)
     return result

@@ -29,16 +29,38 @@ def provider(request):
         name, arguments = "project_status", {"purpose": "核对当前可用方法"}
     else:
         name = "finish_answer"
-        arguments = {"kind": "answer", "answer": "已读取当前注册的预测方法与优化方法目录。",
-                     "evidence_ids": [feedback[-1]["evidence_id"]]}
-    return httpx.Response(200, json={"choices": [{"finish_reason": "tool_calls", "message": {
-        "role": "assistant", "content": None, "reasoning_content": "synthetic-private-provider-context",
-        "tool_calls": [{"id": "tool-call", "type": "function", "function": {"name": name, "arguments": json.dumps(arguments)}}]}}],
-        "usage": {"prompt_tokens": 1000, "completion_tokens": 100, "prompt_cache_hit_tokens": 100}})
+        arguments = {
+            "kind": "answer",
+            "answer": "已读取当前注册的预测方法与优化方法目录。",
+            "evidence_ids": [feedback[-1]["evidence_id"]],
+        }
+    return httpx.Response(
+        200,
+        json={
+            "choices": [
+                {
+                    "finish_reason": "tool_calls",
+                    "message": {
+                        "role": "assistant",
+                        "content": None,
+                        "reasoning_content": "synthetic-private-provider-context",
+                        "tool_calls": [
+                            {
+                                "id": "tool-call",
+                                "type": "function",
+                                "function": {"name": name, "arguments": json.dumps(arguments)},
+                            }
+                        ],
+                    },
+                }
+            ],
+            "usage": {"prompt_tokens": 1000, "completion_tokens": 100, "prompt_cache_hit_tokens": 100},
+        },
+    )
 
 
 def login(client):
-    key = client.app.state.workbench.access.owner_key_path.read_text().strip()
+    key = client.app.state.workbench.access.owner_key_path.read_text(encoding="utf-8").strip()
     response = client.post("/api/auth/session", json={"access_code": key})
     assert response.status_code == 200
 
@@ -52,7 +74,13 @@ def session(client):
 def wait_task(client, identifier, wanted=None):
     for _ in range(200):
         task = client.get("/api/v2/tasks/" + identifier).json()
-        if task["status"] == wanted or task["status"] in ("completed", "failed", "cancelled", "needs_attention", "paused"):
+        if task["status"] == wanted or task["status"] in (
+            "completed",
+            "failed",
+            "cancelled",
+            "needs_attention",
+            "paused",
+        ):
             return task
         time.sleep(0.025)
     raise AssertionError("task did not reach its boundary")
@@ -65,25 +93,37 @@ def test_authenticated_free_questions_followup_and_scoped_access(tmp_path, data)
         login(client)
         client.app.state.workbench.research.transport = httpx.MockTransport(provider)
         identifier = session(client)
-        first = client.post(f"/api/v2/sessions/{identifier}/messages", json={
-            "question": "现在这套系统有哪些方法？", "request_key": "first", "max_cost_cny": 0.5}).json()
+        first = client.post(
+            f"/api/v2/sessions/{identifier}/messages",
+            json={"question": "现在这套系统有哪些方法？", "request_key": "first", "max_cost_cny": 0.5},
+        ).json()
         task = wait_task(client, first["id"])
         assert task["status"] == "completed"
         assert task["model_calls"] == 2 and task["tool_calls"] == 1
         assert task["request"]["settings"]["max_cost_cny"] == 0.5
         assert task["evidence"] and task["usage"]["spent_cny"] > 0
-        repeated = client.post(f"/api/v2/sessions/{identifier}/messages", json={
-            "question": "现在这套系统有哪些方法？", "request_key": "first", "max_cost_cny": 0.5}).json()
+        repeated = client.post(
+            f"/api/v2/sessions/{identifier}/messages",
+            json={"question": "现在这套系统有哪些方法？", "request_key": "first", "max_cost_cny": 0.5},
+        ).json()
         assert repeated["reused"] and repeated["id"] == first["id"]
-        second = client.post(f"/api/v2/sessions/{identifier}/messages", json={
-            "question": "那优化方法呢？", "request_key": "followup"}).json()
+        second = client.post(
+            f"/api/v2/sessions/{identifier}/messages", json={"question": "那优化方法呢？", "request_key": "followup"}
+        ).json()
         assert wait_task(client, second["id"])["status"] == "completed"
         assert len(client.get(f"/api/v2/sessions/{identifier}").json()["messages"]) == 4
-        other_key = client.post("/api/v2/access-keys", json={"user_id": "other", "role": "viewer"}).json()["access_code"]
+        other_key = client.post("/api/v2/access-keys", json={"user_id": "other", "role": "viewer"}).json()[
+            "access_code"
+        ]
         headers = {"Authorization": "Bearer " + other_key}
         assert client.get(f"/api/v2/sessions/{identifier}", headers=headers).status_code == 404
         assert client.get(f"/api/v2/tasks/{first['id']}", headers=headers).status_code == 404
-        assert client.post("/api/runs", json={"task_type": "train", "request_key": "forbidden"}, headers=headers).status_code == 403
+        assert (
+            client.post(
+                "/api/runs", json={"task_type": "train", "request_key": "forbidden"}, headers=headers
+            ).status_code
+            == 403
+        )
         with client.app.state.workbench.store.connection() as c:
             saved = "\n".join(c.iterdump())
         assert "synthetic-private-provider-context" not in saved
@@ -96,19 +136,23 @@ def test_authenticated_free_questions_followup_and_scoped_access(tmp_path, data)
 def test_pause_restart_resume_reuses_evidence_and_preserves_budget(tmp_path, data, monkeypatch):
     entered, release = threading.Event(), threading.Event()
     from copper_mvp.research_tools import ResearchTools
+
     original = ResearchTools.project_status
+
     def slow(self):
         entered.set()
         assert release.wait(5)
         return original(self)
+
     monkeypatch.setattr(ResearchTools, "project_status", slow)
     with TestClient(create_app(tmp_path, data), base_url="http://127.0.0.1") as client:
         login(client)
         wb = client.app.state.workbench
         wb.research.transport = httpx.MockTransport(provider)
         identifier = session(client)
-        task_id = client.post(f"/api/v2/sessions/{identifier}/messages", json={
-            "question": "查看可用方法", "request_key": "pause"}).json()["id"]
+        task_id = client.post(
+            f"/api/v2/sessions/{identifier}/messages", json={"question": "查看可用方法", "request_key": "pause"}
+        ).json()["id"]
         assert entered.wait(5)
         current = client.get("/api/v2/tasks/" + task_id).json()
         paused = client.post(f"/api/v2/tasks/{task_id}/pause", json={"expected_version": current["version"]})
@@ -124,12 +168,19 @@ def test_pause_restart_resume_reuses_evidence_and_preserves_budget(tmp_path, dat
         assert result["status"] == "completed"
         assert result["cache_hits"] == 1 and result["model_calls"] == 3
         assert result["result"]["provider_context_restarted"]
-        entered.clear(); release.clear()
-        cancellation = client.post(f"/api/v2/sessions/{identifier}/messages", json={
-            "question": "再核对一次", "request_key": "cancel"}).json()["id"]
+        entered.clear()
+        release.clear()
+        cancellation = client.post(
+            f"/api/v2/sessions/{identifier}/messages", json={"question": "再核对一次", "request_key": "cancel"}
+        ).json()["id"]
         assert entered.wait(5)
         current = client.get("/api/v2/tasks/" + cancellation).json()
-        assert client.post(f"/api/v2/tasks/{cancellation}/cancel", json={"expected_version": current["version"]}).status_code == 200
+        assert (
+            client.post(
+                f"/api/v2/tasks/{cancellation}/cancel", json={"expected_version": current["version"]}
+            ).status_code
+            == 200
+        )
         release.set()
         cancelled = wait_task(client, cancellation)
         assert cancelled["status"] == "cancelled" and cancelled["result"] is None
@@ -139,7 +190,9 @@ def test_expired_worker_cannot_commit_and_unknown_model_charge_is_not_retried(tm
     store = ResearchStore(RunStore(tmp_path / "leases"))
     actor = Principal("owner", "owner")
     conversation = store.create_session(actor, "lease", {})
-    task, _ = store.create_task(actor, conversation["id"], {"question": "q", "request_key": "lease", "context": {}, "source_version": "v"})
+    task, _ = store.create_task(
+        actor, conversation["id"], {"question": "q", "request_key": "lease", "context": {}, "source_version": "v"}
+    )
     old = store.claim(task["id"], "first", lease_seconds=0.01)
     time.sleep(0.02)
     fresh = store.claim(task["id"], "second")
@@ -148,15 +201,18 @@ def test_expired_worker_cannot_commit_and_unknown_model_charge_is_not_retried(tm
         store.finish(task["id"], "first", old, {"answer": "stale"}, 1)
     store.finish(task["id"], "second", fresh, {"answer": "current"}, 2)
     calls = []
+
     def timeout(request):
         calls.append(request)
         raise httpx.ReadTimeout("synthetic timeout")
+
     with TestClient(create_app(tmp_path / "network", data), base_url="http://127.0.0.1") as client:
         login(client)
         client.app.state.workbench.research.transport = httpx.MockTransport(timeout)
         identifier = session(client)
-        task_id = client.post(f"/api/v2/sessions/{identifier}/messages", json={
-            "question": "检查当前模型", "request_key": "timeout"}).json()["id"]
+        task_id = client.post(
+            f"/api/v2/sessions/{identifier}/messages", json={"question": "检查当前模型", "request_key": "timeout"}
+        ).json()["id"]
         result = wait_task(client, task_id)
         assert result["status"] == "needs_attention"
         assert len(calls) == result["model_calls"] == 1
@@ -165,11 +221,16 @@ def test_expired_worker_cannot_commit_and_unknown_model_charge_is_not_retried(tm
 
 def test_local_event_values_are_rendered_without_being_sent_to_provider(tmp_path, data, monkeypatch):
     from copper_mvp.research_tools import ResearchTools
+
     def context(self, reference="selected"):
-        return {"summary": {"local_fact_names": ["current_cu"]},
-                "local_facts": {"current_cu": {"value": 731.246, "unit": "g/L"}}}
+        return {
+            "summary": {"local_fact_names": ["current_cu"]},
+            "local_facts": {"current_cu": {"value": 731.246, "unit": "g/L"}},
+        }
+
     monkeypatch.setattr(ResearchTools, "event_context", context)
     sent = []
+
     def model(request):
         body = json.loads(request.content)
         sent.append(request.content.decode())
@@ -178,18 +239,45 @@ def test_local_event_values_are_rendered_without_being_sent_to_provider(tmp_path
             name, args = "event_context", {"purpose": "读取当前化验值"}
         else:
             reference = feedback[-1]["evidence_id"]
-            name, args = "finish_answer", {"answer": "当前 Cu 为 {{" + reference + ".current_cu}}。",
-                                           "evidence_ids": [reference], "kind": "answer"}
-        return httpx.Response(200, json={"choices": [{"finish_reason": "tool_calls", "message": {
-            "role": "assistant", "content": None, "tool_calls": [{"id": "synthetic", "type": "function",
-            "function": {"name": name, "arguments": json.dumps(args)}}]}}],
-            "usage": {"prompt_tokens": 1000, "completion_tokens": 100}})
+            name, args = (
+                "finish_answer",
+                {
+                    "answer": "当前 Cu 为 {{" + reference + ".current_cu}}。",
+                    "evidence_ids": [reference],
+                    "kind": "answer",
+                },
+            )
+        return httpx.Response(
+            200,
+            json={
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": "synthetic",
+                                    "type": "function",
+                                    "function": {"name": name, "arguments": json.dumps(args)},
+                                }
+                            ],
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 100},
+            },
+        )
+
     with TestClient(create_app(tmp_path, data), base_url="http://127.0.0.1") as client:
         login(client)
         client.app.state.workbench.research.transport = httpx.MockTransport(model)
         identifier = session(client)
-        task_id = client.post(f"/api/v2/sessions/{identifier}/messages", json={
-            "question": "当前 Cu 浓度是多少？", "request_key": "local-value"}).json()["id"]
+        task_id = client.post(
+            f"/api/v2/sessions/{identifier}/messages",
+            json={"question": "当前 Cu 浓度是多少？", "request_key": "local-value"},
+        ).json()["id"]
         task = wait_task(client, task_id)
         assert task["status"] == "completed"
         assert "731.246 g/L" in task["result"]["answer"]

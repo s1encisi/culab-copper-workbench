@@ -8,7 +8,6 @@ from typing import Any
 
 from pydantic import BaseModel
 
-
 FORBIDDEN_EXACT_KEYS = {
     "forward_prediction_flag",
     "target_event_id",

@@ -1,18 +1,18 @@
 """Authenticated sessions, messages and authoritative task controls."""
+
 from __future__ import annotations
 
 import asyncio
 import json
-from typing import Literal, Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, SecretStr
 
-from copper_mvp.access import PROJECT
 from copper_mvp.common import WorkbenchError
-from copper_mvp.research_store import TERMINAL
 from copper_mvp.research_memory import KnowledgeReference, MemoryCapture
+from copper_mvp.research_store import TERMINAL
 
 
 class Context(BaseModel):
@@ -23,7 +23,9 @@ class Context(BaseModel):
     event_id: str | None = Field(default=None, max_length=180)
     as_of: AwareDatetime | None = None
     knowledge_refs: list[KnowledgeReference] = Field(default_factory=list, max_length=20)
-    control_command_ids: list[Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]] = Field(default_factory=list, max_length=20)
+    control_command_ids: list[Annotated[str, Field(pattern=r"^[a-f0-9]{32}$")]] = Field(
+        default_factory=list, max_length=20
+    )
 
 
 class NewSession(BaseModel):
@@ -71,15 +73,25 @@ def research_router():
     @router.get("/api/auth/status")
     def status(request: Request):
         value = getattr(request.state, "principal", None)
-        return {"authenticated": value is not None, "user": value.user_id if value else None,
-                "role": value.role if value else None, "access_code_location": "运行目录中的 owner_access.key",
-                "auth_required": request.app.state.enforce_auth}
+        return {
+            "authenticated": value is not None,
+            "user": value.user_id if value else None,
+            "role": value.role if value else None,
+            "access_code_location": "运行目录中的 owner_access.key",
+            "auth_required": request.app.state.enforce_auth,
+        }
 
     @router.post("/api/auth/session")
     def login(request: Request, response: Response, payload: Login):
         principal, cookie = wb(request).access.login(payload.access_code.get_secret_value())
-        response.set_cookie("culab_session", cookie, httponly=True, samesite="strict",
-                            secure=request.url.scheme == "https", max_age=30 * 86400)
+        response.set_cookie(
+            "culab_session",
+            cookie,
+            httponly=True,
+            samesite="strict",
+            secure=request.url.scheme == "https",
+            max_age=30 * 86400,
+        )
         return {"user": principal.user_id, "role": principal.role}
 
     @router.post("/api/auth/logout")
@@ -97,13 +109,21 @@ def research_router():
     def assistant_info(request: Request):
         actor(request).require("read")
         service = wb(request).research
-        return {"model": service.settings.model, "live_calls_enabled": service.allow_live,
-                "max_calls": service.settings.max_calls, "max_tools": service.settings.max_tool_calls,
-                "max_cost_cny": service.settings.max_cost_cny, "session_cost_cny": 10, "user_day_cost_cny": 20}
+        return {
+            "model": service.settings.model,
+            "live_calls_enabled": service.allow_live,
+            "max_calls": service.settings.max_calls,
+            "max_tools": service.settings.max_tool_calls,
+            "max_cost_cny": service.settings.max_cost_cny,
+            "session_cost_cny": 10,
+            "user_day_cost_cny": 20,
+        }
 
     @router.post("/api/v2/sessions", status_code=201)
     def new_session(request: Request, payload: NewSession):
-        return wb(request).research.store.create_session(actor(request), payload.title, payload.context.model_dump(mode="json"))
+        return wb(request).research.store.create_session(
+            actor(request), payload.title, payload.context.model_dump(mode="json")
+        )
 
     @router.get("/api/v2/sessions")
     def sessions(request: Request):
@@ -129,8 +149,14 @@ def research_router():
 
     @router.post("/api/v2/sessions/{session_id}/messages", status_code=202)
     def message(request: Request, session_id: str, payload: Message):
-        return wb(request).research.submit(actor(request), session_id, payload.question, payload.request_key,
-                    payload.context.model_dump(mode="json", exclude_unset=True) if payload.context else None, payload.max_cost_cny)
+        return wb(request).research.submit(
+            actor(request),
+            session_id,
+            payload.question,
+            payload.request_key,
+            payload.context.model_dump(mode="json", exclude_unset=True) if payload.context else None,
+            payload.max_cost_cny,
+        )
 
     @router.get("/api/v2/tasks/{task_id}")
     def task(request: Request, task_id: str):
@@ -139,7 +165,13 @@ def research_router():
     @router.post("/api/v2/tasks/{task_id}/{action}")
     def control(request: Request, task_id: str, action: Literal["pause", "resume", "cancel"], payload: Control):
         service = wb(request).research
-        result = service.store.control(actor(request), task_id, action, payload.expected_version, service.source_version() if action == "resume" else "")
+        result = service.store.control(
+            actor(request),
+            task_id,
+            action,
+            payload.expected_version,
+            service.source_version() if action == "resume" else "",
+        )
         if action == "resume":
             service.schedule(task_id)
         return result
@@ -149,6 +181,7 @@ def research_router():
         principal = actor(request)
         store = wb(request).research.store
         store.task(principal, task_id)
+
         async def stream():
             sequence = max(0, after)
             while not await request.is_disconnected():
@@ -159,6 +192,7 @@ def research_router():
                 if current["status"] in TERMINAL or current["status"] == "paused":
                     break
                 await asyncio.sleep(0.5)
+
         return StreamingResponse(stream(), media_type="text/event-stream")
 
     return router

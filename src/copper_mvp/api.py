@@ -12,31 +12,40 @@ from fastapi import FastAPI, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
+from copper_mvp.access import PROJECT, Principal
+from copper_mvp.api_calibration import calibration_router
+from copper_mvp.api_classical import classical_router
+from copper_mvp.api_control import control_router
+from copper_mvp.api_data import data_router
+from copper_mvp.api_domain import domain_router
+from copper_mvp.api_ensembles import ensemble_router
+from copper_mvp.api_knowledge import knowledge_router
+from copper_mvp.api_models import model_router
+from copper_mvp.api_optimizers import optimizer_router
+from copper_mvp.api_portfolios import portfolio_router
+from copper_mvp.api_releases import release_router
+from copper_mvp.api_research import research_router
+from copper_mvp.api_routing import routing_router
+from copper_mvp.api_workspace import workspace_router
 from copper_mvp.common import APP_VERSION, DEFAULT_RUNS_DIR, PROJECT_ROOT, WorkbenchError, dumps, safe
 from copper_mvp.contracts import AgentDiagnosticRequest, ExplanationRequest, RunRequest, SelectionRequest
 from copper_mvp.data import DataRepository
 from copper_mvp.workflows import Workbench
-from copper_mvp.api_data import data_router
-from copper_mvp.api_models import model_router
-from copper_mvp.api_optimizers import optimizer_router
-from copper_mvp.api_research import research_router
-from copper_mvp.api_control import control_router
-from copper_mvp.api_routing import routing_router
-from copper_mvp.api_ensembles import ensemble_router
-from copper_mvp.api_releases import release_router
-from copper_mvp.api_portfolios import portfolio_router
-from copper_mvp.api_classical import classical_router
-from copper_mvp.api_knowledge import knowledge_router
-from copper_mvp.api_calibration import calibration_router
-from copper_mvp.api_workspace import workspace_router
-from copper_mvp.api_domain import domain_router
-from copper_mvp.access import Principal, PROJECT
 
 
-def create_app(run_dir: Path | None = None, data: DataRepository | None = None, *, enable_g1: bool | None = None, enforce_auth: bool = True, frontend_dir: Path | None = None) -> FastAPI:
+def create_app(
+    run_dir: Path | None = None,
+    data: DataRepository | None = None,
+    *,
+    enable_g1: bool | None = None,
+    enforce_auth: bool = True,
+    frontend_dir: Path | None = None,
+) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app):
-        app.state.workbench = Workbench(run_dir or Path(os.environ.get("COPPER_MVP_RUN_DIR", str(DEFAULT_RUNS_DIR))), data=data)
+        app.state.workbench = Workbench(
+            run_dir or Path(os.environ.get("COPPER_MVP_RUN_DIR", str(DEFAULT_RUNS_DIR))), data=data
+        )
         yield
         app.state.workbench.close()
 
@@ -70,35 +79,68 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
 
     @app.exception_handler(WorkbenchError)
     async def domain_error(request, exc):
-        status = 401 if exc.code == "UNAUTHENTICATED" else 403 if exc.code == "FORBIDDEN" else 409 if exc.code in ("REQUEST_CONFLICT", "CALL_ALREADY_RESERVED", "SOURCE_CHANGED", "VERSION_CONFLICT", "TASK_STATE", "SESSION_BUSY", "RELEASE_STATE", "ARTIFACT_STATE", "SHADOW_STATE") else 404 if exc.code.endswith("NOT_FOUND") else 400
+        status = (
+            401
+            if exc.code == "UNAUTHENTICATED"
+            else 403
+            if exc.code == "FORBIDDEN"
+            else 409
+            if exc.code
+            in (
+                "REQUEST_CONFLICT",
+                "CALL_ALREADY_RESERVED",
+                "SOURCE_CHANGED",
+                "VERSION_CONFLICT",
+                "TASK_STATE",
+                "SESSION_BUSY",
+                "RELEASE_STATE",
+                "ARTIFACT_STATE",
+                "SHADOW_STATE",
+            )
+            else 404
+            if exc.code.endswith("NOT_FOUND")
+            else 400
+        )
         return JSONResponse(status_code=status, content={"error": {"code": exc.code, "message": str(exc)}})
 
     @app.middleware("http")
     async def local_origin(request, call_next):
         origin = request.headers.get("origin")
         if origin and urlparse(origin).hostname not in ("localhost", "127.0.0.1", "::1"):
-            return JSONResponse(status_code=403, content={"error": {"code": "LOCAL_ONLY", "message": "此工作台在本机使用"}})
+            return JSONResponse(
+                status_code=403, content={"error": {"code": "LOCAL_ONLY", "message": "此工作台在本机使用"}}
+            )
         if request.url.path.startswith("/api/"):
             if enforce_auth and request.url.hostname not in ("localhost", "127.0.0.1", "::1"):
-                return JSONResponse(status_code=403, content={"error": {"code": "LOCAL_ONLY", "message": "请从本机地址访问"}})
+                return JSONResponse(
+                    status_code=403, content={"error": {"code": "LOCAL_ONLY", "message": "请从本机地址访问"}}
+                )
             authorization = request.headers.get("authorization", "")
             key = authorization[7:] if authorization.startswith("Bearer ") else None
-            principal = request.app.state.workbench.access.authenticate(key=key, cookie=request.cookies.get("culab_session"))
+            principal = request.app.state.workbench.access.authenticate(
+                key=key, cookie=request.cookies.get("culab_session")
+            )
             if not enforce_auth and principal is None:
                 principal = Principal("owner", "owner")
             request.state.principal = principal
             if request.url.path not in ("/api/auth/status", "/api/auth/session"):
                 if principal is None:
-                    return JSONResponse(status_code=401, content={"error": {"code": "UNAUTHENTICATED", "message": "需要本机访问码"}})
+                    return JSONResponse(
+                        status_code=401, content={"error": {"code": "UNAUTHENTICATED", "message": "需要本机访问码"}}
+                    )
                 if principal.project_id != PROJECT:
-                    return JSONResponse(status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号无权访问此项目"}})
+                    return JSONResponse(
+                        status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号无权访问此项目"}}
+                    )
                 legacy_write = request.method != "GET" and request.url.path.startswith("/api/runs")
                 compute_write = request.method == "POST" and request.url.path == "/api/v2/model-comparisons"
                 if legacy_write or compute_write:
                     try:
                         principal.require("compute")
                     except WorkbenchError:
-                        return JSONResponse(status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号没有计算权限"}})
+                        return JSONResponse(
+                            status_code=403, content={"error": {"code": "FORBIDDEN", "message": "当前账号没有计算权限"}}
+                        )
         response = await call_next(request)
         if request.url.path.startswith(("/api/v2/knowledge/", "/api/v2/tasks/", "/api/v2/sessions")):
             response.headers["Cache-Control"] = "no-store"
@@ -108,7 +150,14 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
     @app.get("/api/health")
     def health(request: Request):
         wb = workbench(request)
-        return {"status": "ready", "version": APP_VERSION, "local_only": True, "llm_enabled": wb.explanations.enabled, "models_ready": bool(wb.models.catalog()), "dataset_version": wb.data.dataset_version}
+        return {
+            "status": "ready",
+            "version": APP_VERSION,
+            "local_only": True,
+            "llm_enabled": wb.explanations.enabled,
+            "models_ready": bool(wb.models.catalog()),
+            "dataset_version": wb.data.dataset_version,
+        }
 
     @app.get("/api/overview")
     def overview(request: Request):
@@ -128,7 +177,14 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
         return {"items": workbench(request).store.diagnoses(run_id)}
 
     @app.get("/api/events")
-    def events(request: Request, year: int | None = None, query: str = "", scope: Literal["all", "oof", "dual"] = "all", offset: int = Query(0, ge=0), limit: int = Query(40, ge=1, le=100)):
+    def events(
+        request: Request,
+        year: int | None = None,
+        query: str = "",
+        scope: Literal["all", "oof", "dual"] = "all",
+        offset: int = Query(0, ge=0),
+        limit: int = Query(40, ge=1, le=100),
+    ):
         return workbench(request).data.events(year, query[:120], scope, offset, limit)
 
     @app.get("/api/events/{event_id}")
@@ -150,7 +206,20 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
             path = workbench(request).data.evidence_dir / "artifacts/p2" / subfolder / "overall_metrics_v1.csv"
             if path.is_file():
                 rows = pd.read_csv(path)
-                history.extend({"experiment": name, "model": r.model_name, "target": "cu" if r.target_name == "target_cu_g_l" else "as", "n": r.validation_sample_count, "mae": r.pooled_mae, "rmse": r.pooled_rmse, "r2": r.pooled_r2, "run_id": r.run_id, "source": str(path.relative_to(workbench(request).data.evidence_dir))} for r in rows.itertuples())
+                history.extend(
+                    {
+                        "experiment": name,
+                        "model": r.model_name,
+                        "target": "cu" if r.target_name == "target_cu_g_l" else "as",
+                        "n": r.validation_sample_count,
+                        "mae": r.pooled_mae,
+                        "rmse": r.pooled_rmse,
+                        "r2": r.pooled_r2,
+                        "run_id": r.run_id,
+                        "source": str(path.relative_to(workbench(request).data.evidence_dir)),
+                    }
+                    for r in rows.itertuples()
+                )
         return safe({"history": history, "bundles": workbench(request).models.catalog()})
 
     @app.post("/api/runs", status_code=202)
@@ -194,9 +263,21 @@ def create_app(run_dir: Path | None = None, data: DataRepository | None = None, 
             elif result.get("kind") == "agent_diagnosis":
                 rows = result.get("steps", [])
             else:
-                rows = [{"run_id": run_id, "task_type": item["task_type"], "status": item["status"], "solution_status": result.get("solution_status"), "code": result.get("code") or (item.get("error") or {}).get("code"), "message": result.get("message") or (item.get("error") or {}).get("message")}]
-            return Response(pd.DataFrame(rows).to_csv(index=False), media_type="text/csv; charset=utf-8", headers=headers)
+                rows = [
+                    {
+                        "run_id": run_id,
+                        "task_type": item["task_type"],
+                        "status": item["status"],
+                        "solution_status": result.get("solution_status"),
+                        "code": result.get("code") or (item.get("error") or {}).get("code"),
+                        "message": result.get("message") or (item.get("error") or {}).get("message"),
+                    }
+                ]
+            return Response(
+                pd.DataFrame(rows).to_csv(index=False), media_type="text/csv; charset=utf-8", headers=headers
+            )
         from copper_mvp.explanation import template
+
         text = f"# CuLab 运行摘要\n\n运行编号：{run_id}\n\n任务：{item['task_type']}\n\n状态：{item['status']}\n\n"
         if result.get("kind") == "agent_diagnosis":
             report = result.get("report") or {}

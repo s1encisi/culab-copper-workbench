@@ -28,7 +28,6 @@ from copper_mas.data.asof import backward_asof_snapshots, summarize_feature_anch
 from copper_mas.data.assembly import assemble_final_admission_cards
 from copper_mas.data.leakage import assert_no_future_information
 
-
 SCHEMA_VERSION = "2.0"
 EXTERNAL_YEAR = 2026
 EXPECTED_EVENT_COUNT = 683
@@ -105,7 +104,7 @@ def sha256_file(path: Path) -> str:
 
 def stable_pair_id(origin_event_id: str, target_event_id: str | None) -> str:
     target_token = target_event_id or "FINAL_AUDIT_NO_OUTCOME"
-    payload = f"{CONTRACT_ID}|{origin_event_id}|{target_token}".encode("utf-8")
+    payload = f"{CONTRACT_ID}|{origin_event_id}|{target_token}".encode()
     return "pair_" + hashlib.sha256(payload).hexdigest()[:20]
 
 
@@ -159,12 +158,10 @@ def parse_target_events_2026(
         raise ValueError("2026 原液罐目标表未解析出 Cu/As")
 
     canonical_rows: list[pd.Series] = []
-    for (_, _), group in long.groupby(
-        ["liquid_sample_key", "analyte"], sort=False, dropna=False
-    ):
-        representative = group.sort_values(
-            ["source_rank", "source_file", "source_row"], kind="mergesort"
-        ).iloc[-1].copy()
+    for (_, _), group in long.groupby(["liquid_sample_key", "analyte"], sort=False, dropna=False):
+        representative = (
+            group.sort_values(["source_rank", "source_file", "source_row"], kind="mergesort").iloc[-1].copy()
+        )
         values = group[["canonical_value", "canonical_unit"]].drop_duplicates()
         times = group["sample_datetime"].drop_duplicates()
         conflict = len(values) > 1 or len(times) > 1
@@ -208,16 +205,14 @@ def parse_target_events_2026(
     for analyte in ("Cu", "As"):
         if analyte not in events:
             events[analyte] = np.nan
-    events = events.rename(
-        columns={"sample_datetime": "recorded_at", "Cu": "current_cu", "As": "current_as"}
-    )
+    events = events.rename(columns={"sample_datetime": "recorded_at", "Cu": "current_cu", "As": "current_as"})
     events["recorded_at"] = pd.to_datetime(events["recorded_at"], errors="raise")
     events = events.loc[events["recorded_at"].dt.year.eq(EXTERNAL_YEAR)].copy()
     events["available_at"] = events["recorded_at"]
     events["sample_at_assumed"] = events["recorded_at"] - ASSUMED_SAMPLE_DELAY
     events["event_id"] = [
         legacy.stable_id("target", key, timestamp)
-        for key, timestamp in zip(events["liquid_sample_key"], events["recorded_at"])
+        for key, timestamp in zip(events["liquid_sample_key"], events["recorded_at"], strict=True)
     ]
     events = events.sort_values(["recorded_at", "event_id"], kind="mergesort").reset_index(drop=True)
     events["sequence_index"] = events.index.astype(int)
@@ -295,9 +290,8 @@ def _canonicalize_electro(frames: list[pd.DataFrame]) -> pd.DataFrame:
         0,
         "operation_event_id",
         [
-            "er_"
-            + hashlib.sha256(f"{system}|{pd.Timestamp(ts).isoformat()}".encode("utf-8")).hexdigest()[:20]
-            for system, ts in zip(frame["system"], frame["timestamp"])
+            "er_" + hashlib.sha256(f"{system}|{pd.Timestamp(ts).isoformat()}".encode()).hexdigest()[:20]
+            for system, ts in zip(frame["system"], frame["timestamp"], strict=True)
         ],
     )
 
@@ -330,9 +324,7 @@ def _canonicalize_electro(frames: list[pd.DataFrame]) -> pd.DataFrame:
         )
 
     implausible = [f"{area}_implausible_flag" for area in ("west", "east", "stage12_decopper")]
-    conflicts = [
-        f"{area}_state_signal_conflict_flag" for area in ("west", "east", "stage12_decopper")
-    ]
+    conflicts = [f"{area}_state_signal_conflict_flag" for area in ("west", "east", "stage12_decopper")]
     frame["any_implausible_value_flag"] = frame[implausible].any(axis=1)
     frame["any_state_signal_conflict_flag"] = frame[conflicts].any(axis=1)
     frame["analysis_eligible"] = ~(
@@ -419,9 +411,7 @@ def parse_stage34_2026(
 
     parsed = legacy.parse_stage34_operation().copy()
     parsed["timestamp"] = pd.to_datetime(parsed["timestamp"], errors="raise")
-    parsed = parsed.loc[
-        parsed["timestamp"].dt.year.eq(EXTERNAL_YEAR) & parsed["timestamp"].le(cutoff)
-    ].copy()
+    parsed = parsed.loc[parsed["timestamp"].dt.year.eq(EXTERNAL_YEAR) & parsed["timestamp"].le(cutoff)].copy()
     duplicate = parsed["timestamp_duplicate_or_conflict_flag"].fillna(False).astype(bool)
     if parsed.loc[duplicate, "analysis_eligible"].fillna(False).astype(bool).any():
         raise AssertionError("三四段重复时间戳组不得进入 analysis_eligible")
@@ -576,15 +566,11 @@ def build_external_event_artifacts(events: pd.DataFrame) -> ExternalEventArtifac
                 "target_event_id": target_id,
                 "target_recorded_at": _iso(target["recorded_at"]) if target is not None else None,
                 "target_available_at": _iso(target["available_at"]) if target is not None else None,
-                "target_sample_at_assumed": (
-                    _iso(target["sample_at_assumed"]) if target is not None else None
-                ),
+                "target_sample_at_assumed": (_iso(target["sample_at_assumed"]) if target is not None else None),
                 "origin_year": EXTERNAL_YEAR,
                 "target_year": EXTERNAL_YEAR if target is not None else pd.NA,
                 "cross_year_pair": False,
-                "pair_status": (
-                    "LABELED_STRICT_ADJACENT" if target is not None else "FINAL_EVENT_AUDIT_NO_LABEL"
-                ),
+                "pair_status": ("LABELED_STRICT_ADJACENT" if target is not None else "FINAL_EVENT_AUDIT_NO_LABEL"),
             }
         )
         if target is None:
@@ -620,9 +606,7 @@ def build_external_event_artifacts(events: pd.DataFrame) -> ExternalEventArtifac
             evaluation_reason_codes=tuple(reasons),
         )
         eval_payload = ledger.model_dump(mode="json")
-        eval_payload["evaluation_reason_codes"] = _json_cell(
-            eval_payload["evaluation_reason_codes"]
-        )
+        eval_payload["evaluation_reason_codes"] = _json_cell(eval_payload["evaluation_reason_codes"])
         evaluation_rows.append(eval_payload)
         if complete:
             outcome_rows.append(
@@ -680,8 +664,12 @@ def _apply_filters(frame: pd.DataFrame, filters: dict[str, Any]) -> pd.DataFrame
         if column not in result:
             raise ValueError(f"过程表缺少筛选字段: {column}")
         if isinstance(expected, bool):
-            normalized = result[column].astype(str).str.strip().str.lower().map(
-                {"true": True, "false": False, "1": True, "0": False}
+            normalized = (
+                result[column]
+                .astype(str)
+                .str.strip()
+                .str.lower()
+                .map({"true": True, "false": False, "1": True, "0": False})
             )
             result = result.loc[normalized.eq(expected)]
         else:
@@ -748,17 +736,14 @@ def build_external_observation_artifacts(
 
     snapshots = pd.concat(all_snapshots, ignore_index=True, sort=False)
     future = snapshots["matched_at"].notna() & (
-        (snapshots["matched_at"] > snapshots["anchor_at"])
-        | (snapshots["available_at"] > snapshots["decision_at"])
+        (snapshots["matched_at"] > snapshots["anchor_at"]) | (snapshots["available_at"] > snapshots["decision_at"])
     )
     if future.any():
         raise AssertionError("2026 外部快照出现未来过程记录")
 
     feature_matrix = events.copy()
     for matrix in feature_matrices:
-        feature_matrix = feature_matrix.merge(
-            matrix, on="origin_event_id", how="left", validate="one_to_one"
-        )
+        feature_matrix = feature_matrix.merge(matrix, on="origin_event_id", how="left", validate="one_to_one")
     feature_matrix = feature_matrix.merge(
         event_artifacts.origin_known_results[
             [
@@ -780,43 +765,27 @@ def build_external_observation_artifacts(
         values=["matched_anchor_count", "unique_matched_record_count", "group_4_of_7_ready"],
     )
     coverage_wide.columns = [f"{group}__{metric}" for metric, group in coverage_wide.columns]
-    coverage_wide = coverage_wide.reset_index().merge(
-        events, on="origin_event_id", how="left", validate="one_to_one"
-    )
+    coverage_wide = coverage_wide.reset_index().merge(events, on="origin_event_id", how="left", validate="one_to_one")
     ready_columns = [column for column in coverage_wide if column.endswith("__group_4_of_7_ready")]
     coverage_wide["all_three_groups_4_of_7_ready"] = coverage_wide[ready_columns].all(axis=1)
 
-    final_cards = assemble_final_admission_cards(
-        event_artifacts.as_of_admission_cards, coverage_wide
-    )
-    pairs = event_artifacts.event_pair_index[
-        ["pair_id", "origin_event_id", "origin_recorded_at", "pair_status"]
-    ]
-    evaluations = event_artifacts.evaluation_ledger[
-        ["pair_id", "prospectively_sampled", "evaluation_eligible"]
-    ]
+    final_cards = assemble_final_admission_cards(event_artifacts.as_of_admission_cards, coverage_wide)
+    pairs = event_artifacts.event_pair_index[["pair_id", "origin_event_id", "origin_recorded_at", "pair_status"]]
+    evaluations = event_artifacts.evaluation_ledger[["pair_id", "prospectively_sampled", "evaluation_eligible"]]
     external_index = pairs.merge(
-        final_cards[
-            ["origin_event_id", "admission_status", "core_process_4_of_7_ready"]
-        ],
+        final_cards[["origin_event_id", "admission_status", "core_process_4_of_7_ready"]],
         on="origin_event_id",
         how="left",
         validate="many_to_one",
     ).merge(evaluations, on="pair_id", how="left", validate="one_to_one")
     outcome_pairs = set(event_artifacts.outcome_ledger["pair_id"].astype(str))
-    external_index["sealed_label_available"] = external_index["pair_id"].astype(str).isin(
-        outcome_pairs
-    )
+    external_index["sealed_label_available"] = external_index["pair_id"].astype(str).isin(outcome_pairs)
     external_index["partition_role"] = "EXTERNAL_TEMPORAL_HOLDOUT"
-    external_index["runtime_prediction_available"] = external_index["admission_status"].ne(
-        "REJECTED"
-    )
+    external_index["runtime_prediction_available"] = external_index["admission_status"].ne("REJECTED")
     external_index["tier1_core_external_evaluation"] = (
         external_index["runtime_prediction_available"]
         & external_index["core_process_4_of_7_ready"].astype(bool)
-        & external_index["evaluation_eligible"].map(
-            lambda value: bool(value) if pd.notna(value) else False
-        )
+        & external_index["evaluation_eligible"].map(lambda value: bool(value) if pd.notna(value) else False)
     )
     forbidden_value_columns = {
         "target_cu_g_l",

@@ -11,7 +11,6 @@ import yaml
 from dotenv import dotenv_values
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-
 SECRET_PATTERN = re.compile(r"(?:sk-|Bearer\s+)[A-Za-z0-9_\-]{12,}", re.IGNORECASE)
 
 
@@ -115,9 +114,7 @@ def load_local_env(
 
     target = os.environ if environ is None else environ
     values = dotenv_values(Path(path))
-    unexpected = sorted(
-        key for key in values if not key.startswith(ALLOWED_LOCAL_ENV_PREFIXES)
-    )
+    unexpected = sorted(key for key in values if not key.startswith(ALLOWED_LOCAL_ENV_PREFIXES))
     if unexpected and not ignore_unrelated:
         raise ConfigurationError(f".env 含未允许的变量名: {unexpected}")
     loaded: list[str] = []
@@ -154,9 +151,7 @@ def resolve_budget_runtime(
     except ValueError as exc:
         raise ConfigurationError("COPPER_MAS_MONTHLY_CNY_LIMIT 必须是数值") from exc
     return BudgetRuntime(
-        max_calls_per_run=_env_int(
-            env, "COPPER_MAS_MAX_CALLS_PER_RUN", registry.budgets.max_calls_per_run
-        ),
+        max_calls_per_run=_env_int(env, "COPPER_MAS_MAX_CALLS_PER_RUN", registry.budgets.max_calls_per_run),
         max_cny_per_run=registry.budgets.max_cny_per_run,
         max_kimi_calls_per_run=_env_int(
             env,
@@ -168,15 +163,9 @@ def resolve_budget_runtime(
             "COPPER_MAS_MAX_DEEPSEEK_CALLS_PER_RUN",
             registry.providers["deepseek_executor"].max_calls_per_run,
         ),
-        max_repair_attempts=_env_int(
-            env, "COPPER_MAS_MAX_REPAIR_ATTEMPTS", registry.budgets.max_repair_attempts
-        ),
-        max_tool_rounds=_env_int(
-            env, "COPPER_MAS_MAX_TOOL_ROUNDS", registry.budgets.max_tool_rounds
-        ),
-        max_wall_seconds=_env_int(
-            env, "COPPER_MAS_MAX_WALL_SECONDS", registry.budgets.max_wall_seconds
-        ),
+        max_repair_attempts=_env_int(env, "COPPER_MAS_MAX_REPAIR_ATTEMPTS", registry.budgets.max_repair_attempts),
+        max_tool_rounds=_env_int(env, "COPPER_MAS_MAX_TOOL_ROUNDS", registry.budgets.max_tool_rounds),
+        max_wall_seconds=_env_int(env, "COPPER_MAS_MAX_WALL_SECONDS", registry.budgets.max_wall_seconds),
         monthly_cny_limit=monthly,
     )
 

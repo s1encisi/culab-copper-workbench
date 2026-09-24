@@ -1,11 +1,13 @@
 """Synthetic protocol acceptance: independent outcomes, faults and crash recovery."""
+
 from __future__ import annotations
 
 import json
 import time
+from types import SimpleNamespace
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 
 from copper_mvp.access import AccessControl, Principal
 from copper_mvp.common import WorkbenchError
@@ -20,6 +22,7 @@ from copper_mvp.storage import RunStore
 
 class DeviceLink:
     admin_key = True
+
     def __init__(self, device):
         self.device = device
         self.crash_after_send = False
@@ -45,7 +48,7 @@ class DeviceLink:
 def system(tmp_path):
     store = RunStore(tmp_path / "workbench")
     access = AccessControl(ResearchStore(store))
-    actor = access.authenticate(key=access.owner_key_path.read_text().strip())
+    actor = access.authenticate(key=access.owner_key_path.read_text(encoding="utf-8").strip())
     device = MockDevice(tmp_path / "independent_mock")
     link = DeviceLink(device)
     service = CommandService(store, access, link, autostart=False)
@@ -54,8 +57,15 @@ def system(tmp_path):
 
 
 def propose(service, actor, *, key="synthetic-1", targets=None, **kwargs):
-    return service.propose(actor, {"request_key": key, "reason": "合成 100 A 到 105 A 协议验收",
-                        "targets": targets or [{"point_id": POINTS[0], "value": 105, "unit": "A"}], **kwargs})
+    return service.propose(
+        actor,
+        {
+            "request_key": key,
+            "reason": "合成 100 A 到 105 A 协议验收",
+            "targets": targets or [{"point_id": POINTS[0], "value": 105, "unit": "A"}],
+            **kwargs,
+        },
+    )
 
 
 def approve(service, actor, proposal):
@@ -80,7 +90,7 @@ def test_exact_command_receipt_ramp_and_three_samples(system):
         propose(service, actor, targets=[{"point_id": POINTS[0], "value": 104}])
     # Ordinary telemetry does not invalidate approval.
     version = device.read_state()["state_version"]
-    device.tick(.5)
+    device.tick(0.5)
     assert device.read_state()["state_version"] == version
     approve(service, actor, proposal)
     service.step()
@@ -96,17 +106,24 @@ def test_exact_command_receipt_ramp_and_three_samples(system):
     assert outcome["result"]["points"][POINTS[0]]["good_samples"] == 3
     record = device.get_command_status(proposal["id"])
     assert record["write_count"] == 1 and link.submissions == 1
-    assert device.submit_command(proposal["payload"], proposal["payload_hash"], 1, time.time()+2)["reused"]
+    assert device.submit_command(proposal["payload"], proposal["payload_hash"], 1, time.time() + 2)["reused"]
     altered = {**proposal["payload"], "reason": "different command"}
     with pytest.raises(WorkbenchError, match="幂等键"):
-        device.submit_command(altered, canonical_hash(altered), 2, time.time()+2)
+        device.submit_command(altered, canonical_hash(altered), 2, time.time() + 2)
 
 
-@pytest.mark.parametrize("fault,code", [
-    ({"mode": "manual"}, "MOCK_INTERLOCK"), ({"mode": "maintenance"}, "MOCK_INTERLOCK"),
-    ({"connected": False}, "MOCK_INTERLOCK"), ({"estop_latched": True}, "MOCK_INTERLOCK"),
-    ({"interlocks_ok": False}, "MOCK_INTERLOCK"), ({"bad_quality": True}, "MOCK_QUALITY"),
-    ({"stale": True}, "MOCK_QUALITY")])
+@pytest.mark.parametrize(
+    "fault,code",
+    [
+        ({"mode": "manual"}, "MOCK_INTERLOCK"),
+        ({"mode": "maintenance"}, "MOCK_INTERLOCK"),
+        ({"connected": False}, "MOCK_INTERLOCK"),
+        ({"estop_latched": True}, "MOCK_INTERLOCK"),
+        ({"interlocks_ok": False}, "MOCK_INTERLOCK"),
+        ({"bad_quality": True}, "MOCK_QUALITY"),
+        ({"stale": True}, "MOCK_QUALITY"),
+    ],
+)
 def test_device_conditions_reject_without_submission(system, fault, code):
     service, actor, device, link = system
     device.inject_fault(fault)
@@ -154,7 +171,7 @@ def test_changed_state_payload_permission_and_ttl_invalidate_approval(system, mo
 
 def test_limits_roles_and_fencing(system):
     service, actor, device, link = system
-    for value, ramp in [(201, 1), (111, 10), (105, .1)]:
+    for value, ramp in [(201, 1), (111, 10), (105, 0.1)]:
         with pytest.raises(WorkbenchError):
             propose(service, actor, targets=[{"point_id": POINTS[0], "value": value}], ramp_seconds=ramp)
     with pytest.raises(WorkbenchError):
@@ -163,7 +180,7 @@ def test_limits_roles_and_fencing(system):
     with pytest.raises(WorkbenchError):
         service.approve(Principal("r", "researcher"), proposal["id"], {"payload_hash": proposal["payload_hash"]})
     with pytest.raises(WorkbenchError, match="租约"):
-        device.submit_command(proposal["payload"], proposal["payload_hash"], 1, time.time()-1)
+        device.submit_command(proposal["payload"], proposal["payload_hash"], 1, time.time() - 1)
     assert link.submissions == 0
 
 
@@ -202,9 +219,15 @@ def test_worker_restart_fences_old_writer_and_retains_device_intent(system):
     assert device.get_command_status(proposal["id"])["write_count"] == 1
 
 
-@pytest.mark.parametrize("fault,expected", [
-    ({"stuck_pv": True}, "FAILED"), ({"readback_bias": 5}, "FAILED"),
-    ({"partial_write_count": 1}, "PARTIAL"), ({"reject_writes": True}, "REJECTED")])
+@pytest.mark.parametrize(
+    "fault,expected",
+    [
+        ({"stuck_pv": True}, "FAILED"),
+        ({"readback_bias": 5}, "FAILED"),
+        ({"partial_write_count": 1}, "PARTIAL"),
+        ({"reject_writes": True}, "REJECTED"),
+    ],
+)
 def test_device_feedback_does_not_turn_ack_into_whole_command_success(system, fault, expected):
     service, actor, device, link = system
     device.inject_fault(fault)
@@ -249,13 +272,17 @@ def test_independent_mock_http_auth_and_persistent_database(tmp_path):
     app = create_mock_app(root, manual_clock=True)
     with TestClient(app, base_url="http://127.0.0.1") as http:
         assert http.get("/v1/state").status_code == 401
-        driver = (root / "driver.key").read_text().strip()
-        admin = (root / "test_admin.key").read_text().strip()
+        driver = (root / "driver.key").read_text(encoding="utf-8").strip()
+        admin = (root / "test_admin.key").read_text(encoding="utf-8").strip()
         client = MockClient("http://127.0.0.1", driver, admin, client=http)
         state = client.read_state()
         assert state["environment"] == "MOCK" and state["device_id"] == DEVICE
-        assert http.post("/v1/test-admin/tick", json={"seconds": 1},
-                         headers={"Authorization": "Bearer " + driver}).status_code == 401
+        assert (
+            http.post(
+                "/v1/test-admin/tick", json={"seconds": 1}, headers={"Authorization": "Bearer " + driver}
+            ).status_code
+            == 401
+        )
         client.tick(1)
         assert client.read_state()["observation_seq"] == 1
     second = create_mock_app(root, manual_clock=True)
@@ -266,34 +293,59 @@ def test_independent_mock_http_auth_and_persistent_database(tmp_path):
         assert new_state["observation_seq"] == 1
 
 
-
 def test_workbench_api_drives_independent_mock_and_rejects_body_authority(tmp_path, monkeypatch):
     from copper_mvp.api import create_app
+
     monkeypatch.delenv("COPPER_MOCK_URL", raising=False)
     monkeypatch.delenv("COPPER_MOCK_KEY_FILE", raising=False)
     monkeypatch.setenv("COPPER_ASSISTANT_LIVE_CALLS", "0")
     mock_root = tmp_path / "mock"
     with TestClient(create_mock_app(mock_root, manual_clock=True), base_url="http://127.0.0.1") as device_http:
-        with TestClient(create_app(run_dir=tmp_path / "workbench"), base_url="http://127.0.0.1") as workbench_http:
+        # Control-only acceptance must not depend on private process datasets.
+        app = create_app(
+            run_dir=tmp_path / "workbench", data=SimpleNamespace(dataset_version="synthetic-control-test")
+        )
+        with TestClient(app, base_url="http://127.0.0.1") as workbench_http:
             wb = workbench_http.app.state.workbench
-            wb.control.client = MockClient("http://127.0.0.1",
-                (mock_root / "driver.key").read_text().strip(),
-                (mock_root / "test_admin.key").read_text().strip(), client=device_http)
+            wb.control.client = MockClient(
+                "http://127.0.0.1",
+                (mock_root / "driver.key").read_text(encoding="utf-8").strip(),
+                (mock_root / "test_admin.key").read_text(encoding="utf-8").strip(),
+                client=device_http,
+            )
             assert workbench_http.get("/api/v2/control").status_code == 401
-            workbench_http.post("/api/auth/session", json={"access_code": wb.access.owner_key_path.read_text().strip()})
-            request = {"request_key": "http-flow", "reason": "合成 HTTP 端到端",
-                       "targets": [{"point_id": POINTS[0], "value": 105, "unit": "A"}]}
+            workbench_http.post(
+                "/api/auth/session", json={"access_code": wb.access.owner_key_path.read_text(encoding="utf-8").strip()}
+            )
+            request = {
+                "request_key": "http-flow",
+                "reason": "合成 HTTP 端到端",
+                "targets": [{"point_id": POINTS[0], "value": 105, "unit": "A"}],
+            }
             assert workbench_http.post("/api/v2/commands", json={**request, "role": "owner"}).status_code == 422
-            assert workbench_http.post("/api/v2/commands", json={**request, "targets": [
-                {"point_id": POINTS[0], "value": 105, "unit": "kA"}]}).status_code == 422
+            assert (
+                workbench_http.post(
+                    "/api/v2/commands",
+                    json={**request, "targets": [{"point_id": POINTS[0], "value": 105, "unit": "kA"}]},
+                ).status_code
+                == 422
+            )
             response = workbench_http.post("/api/v2/commands", json=request)
             assert response.status_code == 201
             proposal = response.json()
             identifier = proposal["id"]
-            assert workbench_http.post(f"/api/v2/commands/{identifier}/approvals",
-                        json={"payload_hash": "0" * 64}).status_code == 400
-            assert workbench_http.post(f"/api/v2/commands/{identifier}/approvals",
-                        json={"payload_hash": proposal["payload_hash"]}).status_code == 200
+            assert (
+                workbench_http.post(
+                    f"/api/v2/commands/{identifier}/approvals", json={"payload_hash": "0" * 64}
+                ).status_code
+                == 400
+            )
+            assert (
+                workbench_http.post(
+                    f"/api/v2/commands/{identifier}/approvals", json={"payload_hash": proposal["payload_hash"]}
+                ).status_code
+                == 200
+            )
             workbench_http.post(f"/api/v2/commands/{identifier}/reconcile", json={})
             for _ in range(9):
                 assert workbench_http.post("/api/v2/mock/test-admin/tick", json={"seconds": 1}).status_code == 200
@@ -302,8 +354,22 @@ def test_workbench_api_drives_independent_mock_and_rejects_body_authority(tmp_pa
                     break
             assert result["status"] == "VERIFIED" and result["outbox"]["attempts"] == 1
             assert workbench_http.get(f"/api/v2/mock/devices/{DEVICE}/state").json()["points"][POINTS[0]]["sp"] == 105
-            viewer = wb.access.issue(wb.access.authenticate(key=wb.access.owner_key_path.read_text().strip()), "viewer", "viewer")
-            assert workbench_http.post("/api/v2/mock/test-admin/faults", json={"mode": "manual"},
-                        headers={"Authorization": "Bearer " + viewer}).status_code == 403
-            assert workbench_http.get(f"/api/v2/commands/{identifier}",
-                        headers={"Authorization": "Bearer " + viewer}).status_code == 403
+            viewer = wb.access.issue(
+                wb.access.authenticate(key=wb.access.owner_key_path.read_text(encoding="utf-8").strip()),
+                "viewer",
+                "viewer",
+            )
+            assert (
+                workbench_http.post(
+                    "/api/v2/mock/test-admin/faults",
+                    json={"mode": "manual"},
+                    headers={"Authorization": "Bearer " + viewer},
+                ).status_code
+                == 403
+            )
+            assert (
+                workbench_http.get(
+                    f"/api/v2/commands/{identifier}", headers={"Authorization": "Bearer " + viewer}
+                ).status_code
+                == 403
+            )

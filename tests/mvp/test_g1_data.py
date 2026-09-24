@@ -1,34 +1,43 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
 import json
 import shutil
-
 import warnings
+from datetime import UTC, datetime, timedelta
 
-import pandas as pd
 import numpy as np
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from copper_mvp.api import create_app
-from copper_mvp.common import DEFAULT_RUNS_DIR, LocalDataPaths, WorkbenchError
+from copper_mvp.common import DEFAULT_RUNS_DIR, WorkbenchError
 from copper_mvp.data import DataRepository
-from copper_mvp.data_contracts import LabelQuery, LabelRecord, ReplayQuery, TaskSpec, source_time
+from copper_mvp.data_contracts import LabelRecord, ReplayQuery, TaskSpec, source_time
 from copper_mvp.data_service import DataService
 from copper_mvp.labels import LabelLedger
 from copper_mvp.modeling import ModelManager
 
 
 def pair(event="synthetic-a", day=1):
-    decision = datetime(2025, 1, day, tzinfo=timezone.utc)
-    return tuple(LabelRecord(
-        event_id=event, pair_id="pair-" + event, target=target, value=value, unit=unit,
-        decision_at=decision, available_at=decision + timedelta(days=1),
-        assumed_sample_time=decision + timedelta(hours=22), quality_eligible=True,
-        source_version="synthetic-source-v1", source_kind="synthetic_fixture")
-        for target, value, unit in (("cu", 2.0, "g/L"), ("as", 5.0, "mg/L")))
+    decision = datetime(2025, 1, day, tzinfo=UTC)
+    return tuple(
+        LabelRecord(
+            event_id=event,
+            pair_id="pair-" + event,
+            target=target,
+            value=value,
+            unit=unit,
+            decision_at=decision,
+            available_at=decision + timedelta(days=1),
+            assumed_sample_time=decision + timedelta(hours=22),
+            quality_eligible=True,
+            source_version="synthetic-source-v1",
+            source_kind="synthetic_fixture",
+        )
+        for target, value, unit in (("cu", 2.0, "g/L"), ("as", 5.0, "mg/L"))
+    )
 
 
 @pytest.fixture(scope="module")
@@ -48,7 +57,7 @@ def test_naive_query_time_and_future_request_fields_are_rejected():
         ReplayQuery(as_of="2025-01-01T00:00:00Z", target_cu_g_l=10)
     with pytest.raises(ValidationError):
         ReplayQuery(model_profile="auto")
-    assert source_time("2025-01-01 08:00:00") == datetime(2025, 1, 1, tzinfo=timezone.utc)
+    assert source_time("2025-01-01 08:00:00") == datetime(2025, 1, 1, tzinfo=UTC)
 
 
 def test_task_units_and_input_schema_are_enforced(repository, selected):
@@ -67,6 +76,7 @@ def test_task_units_and_input_schema_are_enforced(repository, selected):
 def test_snapshot_never_loads_outcomes(repository, selected, monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("prediction snapshot must not load labels")
+
     monkeypatch.setattr(LabelLedger, "from_repository", forbidden)
     service = DataService(repository)
     first = service.snapshot(selected)
@@ -83,15 +93,20 @@ def test_snapshot_never_loads_outcomes(repository, selected, monkeypatch):
 
 def test_future_anchor_and_admission_are_blocked(repository, selected, monkeypatch):
     frame = repository.frame.copy()
-    column = next(s["tag"] + "__t_minus_0h" for s in repository.signals
-                  if np.isfinite(frame.loc[selected, s["tag"] + "__t_minus_0h"]))
+    column = next(
+        s["tag"] + "__t_minus_0h"
+        for s in repository.signals
+        if np.isfinite(frame.loc[selected, s["tag"] + "__t_minus_0h"])
+    )
     frame.loc[selected, column + "__age_h"] = -0.1
     monkeypatch.setattr(repository, "frame", frame)
     with pytest.raises(WorkbenchError, match="锚点"):
         DataService(repository).snapshot(selected)
     frame.loc[selected, column + "__age_h"] = 0.0
     admissions = {**repository.admissions, selected: dict(repository.admissions[selected])}
-    admissions[selected]["feature_cutoff_at"] = (source_time(frame.loc[selected, "decision_at"]) + timedelta(seconds=1)).isoformat()
+    admissions[selected]["feature_cutoff_at"] = (
+        source_time(frame.loc[selected, "decision_at"]) + timedelta(seconds=1)
+    ).isoformat()
     monkeypatch.setattr(repository, "admissions", admissions)
     with pytest.raises(WorkbenchError, match="准入卡"):
         DataService(repository).snapshot(selected)
@@ -105,7 +120,7 @@ def test_available_at_boundary_and_empty_recent_window():
     exact = ledger.snapshot(available, minimum=1)["payload"]
     assert before["labels"] == [] and before["status"] == "INSUFFICIENT_LABELS"
     assert exact["selected_events"] == 1 and len(exact["labels"]) == 2
-    recent = ledger.snapshot(datetime(2026, 1, 1, tzinfo=timezone.utc), minimum=1)["payload"]
+    recent = ledger.snapshot(datetime(2026, 1, 1, tzinfo=UTC), minimum=1)["payload"]
     assert recent["labels"] == [] and recent["routing_action"] == "NONE"
 
 
@@ -114,9 +129,16 @@ def test_revision_replay_preserves_prior_evidence_and_rejects_conflicts():
     ledger = LabelLedger(original)
     at = original[0].available_at
     previous = ledger.snapshot(at, minimum=1)
-    revised = LabelRecord(**{**original[0].model_dump(), "revision": 2,
-                           "supersedes": original[0].record_id, "value": 3.0,
-                           "available_at": at + timedelta(days=1), "source_version": "synthetic-source-v2"})
+    revised = LabelRecord(
+        **{
+            **original[0].model_dump(),
+            "revision": 2,
+            "supersedes": original[0].record_id,
+            "value": 3.0,
+            "available_at": at + timedelta(days=1),
+            "source_version": "synthetic-source-v2",
+        }
+    )
     updated = ledger.with_revision(revised)
     assert updated.snapshot(at, minimum=1)["id"] == previous["id"]
     current = updated.event_records(original[0].event_id, revised.available_at)
@@ -129,25 +151,39 @@ def test_revision_replay_preserves_prior_evidence_and_rejects_conflicts():
 
 def test_latest_invalid_revision_does_not_fall_back_to_old_good_label():
     original = pair()
-    revised = LabelRecord(**{**original[0].model_dump(), "revision": 2,
-        "supersedes": original[0].record_id, "available_at": original[0].available_at + timedelta(days=1),
-        "value": None, "missing_reason": "withdrawn", "quality_eligible": False})
+    revised = LabelRecord(
+        **{
+            **original[0].model_dump(),
+            "revision": 2,
+            "supersedes": original[0].record_id,
+            "available_at": original[0].available_at + timedelta(days=1),
+            "value": None,
+            "missing_reason": "withdrawn",
+            "quality_eligible": False,
+        }
+    )
     result = LabelLedger(original).with_revision(revised).snapshot(revised.available_at, minimum=1)
     assert result["payload"]["labels"] == []
 
 
 def test_comparisons_use_common_mature_events_and_report_missing_coverage():
     ledger = LabelLedger((*pair("synthetic-a", 1), *pair("synthetic-b", 2), *pair("synthetic-c", 3)))
-    result = ledger.snapshot(datetime(2025, 1, 5, tzinfo=timezone.utc), minimum=2,
-                             coverage={"A": {"synthetic-a", "synthetic-b"}, "B": {"synthetic-b", "synthetic-c"}})["payload"]
+    result = ledger.snapshot(
+        datetime(2025, 1, 5, tzinfo=UTC),
+        minimum=2,
+        coverage={"A": {"synthetic-a", "synthetic-b"}, "B": {"synthetic-b", "synthetic-c"}},
+    )["payload"]
     assert result["event_ids"] == ["synthetic-b"]
     assert result["coverage"] == {"A": {"available": 2, "missing": 1}, "B": {"available": 2, "missing": 1}}
     assert result["status"] == "INSUFFICIENT_LABELS" and result["routing_action"] == "NONE"
 
 
 def test_private_dependencies_can_be_relocated_and_changes_are_detected(repository, tmp_path, monkeypatch):
-    for folder, source in (("inputs", repository.data_dir), ("contracts", repository.paths.contract_dir),
-                           ("labels", repository.label_dir)):
+    for folder, source in (
+        ("inputs", repository.data_dir),
+        ("contracts", repository.paths.contract_dir),
+        ("labels", repository.label_dir),
+    ):
         shutil.copytree(source, tmp_path / folder)
     monkeypatch.setenv("COPPER_MVP_DATA_DIR", str(tmp_path / "inputs"))
     monkeypatch.setenv("COPPER_MVP_CONTRACT_DIR", str(tmp_path / "contracts"))
@@ -164,7 +200,7 @@ def test_private_dependencies_can_be_relocated_and_changes_are_detected(reposito
     with pytest.raises(WorkbenchError, match="来源已改变"):
         service.snapshot(repository.frame.index[0])
     with pytest.raises(WorkbenchError, match="来源已改变"):
-        service.labels.snapshot(datetime(2025, 12, 31, tzinfo=timezone.utc))
+        service.labels.snapshot(datetime(2025, 12, 31, tzinfo=UTC))
 
 
 def test_missing_labels_do_not_disable_prediction_snapshots(repository, selected, tmp_path):
@@ -195,7 +231,10 @@ def test_api_replay_label_gate_and_legacy_compatibility(repository, selected, tm
         assert client.get(base + "/evidence", params={"as_of": "2024-01-01T00:00:00Z"}).status_code == 400
         assert client.get(base + "/evidence", params={"model_profile": "auto"}).status_code == 422
         assert client.get(base + "/snapshot", params={"target_cu_g_l": "100"}).status_code == 422
-        assert client.get("/api/v2/data/labels", params={"as_of": available.replace(tzinfo=None).isoformat()}).status_code == 422
+        assert (
+            client.get("/api/v2/data/labels", params={"as_of": available.replace(tzinfo=None).isoformat()}).status_code
+            == 422
+        )
         assert client.get("/api/v2/data/dependencies", params={"local_path": str(tmp_path)}).status_code == 422
         assert client.get("/api/v2/data/dependencies", headers={"Origin": "https://example.com"}).status_code == 403
         assert client.get("/api/events/" + selected).json() == old
@@ -237,7 +276,9 @@ def test_training_uses_available_time_instead_of_recorded_time(repository, tmp_p
     path = tmp_path / "event_pair_index_v2.csv"
     pairs = pd.read_csv(path)
     cutoff = pd.Timestamp(train.fold_fit_cutoff_at.iloc[0])
-    pairs.loc[pairs.pair_id.eq(train.pair_id.iloc[0]), "target_available_at"] = (cutoff + pd.Timedelta(seconds=1)).strftime("%Y-%m-%d %H:%M:%S")
+    pairs.loc[pairs.pair_id.eq(train.pair_id.iloc[0]), "target_available_at"] = (
+        cutoff + pd.Timedelta(seconds=1)
+    ).strftime("%Y-%m-%d %H:%M:%S")
     pairs.to_csv(path, index=False)
     copied = DataRepository(label_dir=tmp_path)
     with pytest.raises(WorkbenchError, match="可用时间"):
@@ -251,10 +292,12 @@ def test_external_label_year_is_blocked_before_reading_outcome_values(repository
     (tmp_path / "outcome_ledger_v2.csv").write_text("DO_NOT_READ", encoding="utf-8")
     copied = DataRepository(label_dir=tmp_path)
     original_read = pd.read_csv
+
     def guarded_read(path, *args, **kwargs):
         if str(path).endswith("outcome_ledger_v2.csv"):
             raise AssertionError("external outcomes were accessed")
         return original_read(path, *args, **kwargs)
+
     monkeypatch.setattr(pd, "read_csv", guarded_read)
     with pytest.raises(WorkbenchError, match="年份边界"):
         copied.training_data()

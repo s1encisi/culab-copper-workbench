@@ -6,7 +6,6 @@ from typing import Any
 
 import pandas as pd
 
-
 REQUIRED_PROTOCOL_KEYS = {
     "protocol_id",
     "targets",
@@ -56,20 +55,16 @@ def evaluate_p2_v1_candidates(
         if model not in allowlist or target not in set(protocol["targets"]):
             continue
         folds = fold_metrics.loc[
-            (fold_metrics["model_name"].astype(str) == model)
-            & (fold_metrics["target_name"].astype(str) == target)
+            (fold_metrics["model_name"].astype(str) == model) & (fold_metrics["target_name"].astype(str) == target)
         ].copy()
         mae_ratios = pd.to_numeric(folds["mae"]) / pd.to_numeric(folds["persistence_mae"])
         pooled_mae_ratio = float(record["pooled_mae"]) / float(record["pooled_persistence_mae"])
         pooled_rmse_ratio = float(record["pooled_rmse"]) / float(record["pooled_persistence_rmse"])
         is_reference = model == reference
         gates = {
-            "gate_pooled_mae_passed": pooled_mae_ratio
-            <= float(thresholds["pooled_mae_ratio_vs_persistence_max"]),
-            "gate_pooled_rmse_passed": pooled_rmse_ratio
-            <= float(thresholds["pooled_rmse_ratio_vs_persistence_max"]),
-            "gate_fold_wins_passed": int((mae_ratios < 1).sum())
-            >= int(thresholds["folds_with_mae_improvement_min"]),
+            "gate_pooled_mae_passed": pooled_mae_ratio <= float(thresholds["pooled_mae_ratio_vs_persistence_max"]),
+            "gate_pooled_rmse_passed": pooled_rmse_ratio <= float(thresholds["pooled_rmse_ratio_vs_persistence_max"]),
+            "gate_fold_wins_passed": int((mae_ratios < 1).sum()) >= int(thresholds["folds_with_mae_improvement_min"]),
             "gate_worst_fold_passed": float(mae_ratios.max())
             <= float(thresholds["worst_fold_mae_ratio_vs_persistence_max"]),
         }
@@ -91,20 +86,14 @@ def evaluate_p2_v1_candidates(
                 **gates,
                 "eligible_for_promotion": eligible,
                 "eligibility_status": (
-                    "REFERENCE_MODEL"
-                    if is_reference
-                    else "PASSES_FROZEN_GATES"
-                    if eligible
-                    else "FAILS_FROZEN_GATES"
+                    "REFERENCE_MODEL" if is_reference else "PASSES_FROZEN_GATES" if eligible else "FAILS_FROZEN_GATES"
                 ),
             }
         )
     return pd.DataFrame(rows)
 
 
-def normalize_p2_1_eligibility(
-    evidence: pd.DataFrame, protocol: dict[str, Any]
-) -> pd.DataFrame:
+def normalize_p2_1_eligibility(evidence: pd.DataFrame, protocol: dict[str, Any]) -> pd.DataFrame:
     required = {
         "target_name",
         "model_name",
@@ -142,9 +131,7 @@ def normalize_p2_1_eligibility(
     return normalized
 
 
-def select_per_target(
-    evidence: pd.DataFrame, protocol: dict[str, Any]
-) -> dict[str, dict[str, Any]]:
+def select_per_target(evidence: pd.DataFrame, protocol: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """通过全部门槛才晋级；无人晋级时按协议回退 Persistence。"""
 
     if protocol["fallback_rule"] != "IF_NO_CANDIDATE_PASSES_ALL_GATES_SELECT_PERSISTENCE":
@@ -153,8 +140,7 @@ def select_per_target(
     selected: dict[str, dict[str, Any]] = {}
     for target in protocol["targets"]:
         candidates = evidence.loc[
-            (evidence["target_name"].astype(str) == target)
-            & evidence["eligible_for_promotion"].map(_as_bool)
+            (evidence["target_name"].astype(str) == target) & evidence["eligible_for_promotion"].map(_as_bool)
         ].copy()
         if candidates.empty:
             selected[target] = {

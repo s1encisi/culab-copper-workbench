@@ -44,9 +44,7 @@ def _request(*, request_id: str = "req-v2") -> ForecastRequestV2:
             ),
         ),
     )
-    return ForecastRequestV2(
-        request_id=request_id, admission=admission, observations=observations
-    )
+    return ForecastRequestV2(request_id=request_id, admission=admission, observations=observations)
 
 
 def _features() -> dict[str, float]:
@@ -61,9 +59,7 @@ def _features() -> dict[str, float]:
 
 
 def test_langgraph_matches_v1_semantics(tmp_path) -> None:
-    plan = fixed_offline_plan(
-        run_id="parity-1", numeric_predictor_ref="PERSISTENCE_CURRENT_RESULT_V1"
-    )
+    plan = fixed_offline_plan(run_id="parity-1", numeric_predictor_ref="PERSISTENCE_CURRENT_RESULT_V1")
     request = _request()
     features = _features()
     expected = run_offline_graph(
@@ -91,9 +87,7 @@ def test_langgraph_matches_v1_semantics(tmp_path) -> None:
 def test_future_target_is_fail_closed(tmp_path) -> None:
     plan = fixed_offline_plan(run_id="fail-a1", numeric_predictor_ref="model-v1")
     features = {**_features(), "target_cu_g_l": 6.0}
-    with LangGraphRunner(
-        checkpoint_path=tmp_path / "fail.sqlite", predict=persistence_predictor
-    ) as runner:
+    with LangGraphRunner(checkpoint_path=tmp_path / "fail.sqlite", predict=persistence_predictor) as runner:
         result = runner.invoke(plan=plan, request=_request(), feature_row=features)
 
     assert result["completed"] is True
@@ -114,12 +108,8 @@ def test_invalid_numeric_output_is_fail_closed(tmp_path) -> None:
         )
 
     plan = fixed_offline_plan(run_id="fail-a4", numeric_predictor_ref="bad-model")
-    with LangGraphRunner(
-        checkpoint_path=tmp_path / "invalid.sqlite", predict=invalid_predictor
-    ) as runner:
-        result = runner.invoke(
-            plan=plan, request=_request(), feature_row=_features()
-        )
+    with LangGraphRunner(checkpoint_path=tmp_path / "invalid.sqlite", predict=invalid_predictor) as runner:
+        result = runner.invoke(plan=plan, request=_request(), feature_row=_features())
 
     assert result["blocked"] is True
     assert result["prediction"] is None
@@ -128,13 +118,9 @@ def test_invalid_numeric_output_is_fail_closed(tmp_path) -> None:
 
 
 def test_run_id_is_idempotent_and_conflict_safe(tmp_path) -> None:
-    plan = fixed_offline_plan(
-        run_id="idempotent-1", numeric_predictor_ref="PERSISTENCE_CURRENT_RESULT_V1"
-    )
+    plan = fixed_offline_plan(run_id="idempotent-1", numeric_predictor_ref="PERSISTENCE_CURRENT_RESULT_V1")
     database = tmp_path / "idempotent.sqlite"
-    with LangGraphRunner(
-        checkpoint_path=database, predict=persistence_predictor
-    ) as runner:
+    with LangGraphRunner(checkpoint_path=database, predict=persistence_predictor) as runner:
         first = runner.invoke(plan=plan, request=_request(), feature_row=_features())
         history_before = runner.history_count(plan.run_id)
         replay = runner.invoke(plan=plan, request=_request(), feature_row=_features())
@@ -150,4 +136,3 @@ def test_run_id_is_idempotent_and_conflict_safe(tmp_path) -> None:
     assert first["idempotent_replay"] is False
     assert replay["idempotent_replay"] is True
     assert history_before == history_after
-

@@ -1,19 +1,31 @@
 """Prepare isolated local document dependencies and pinned public retrieval models."""
+
 from __future__ import annotations
+
 import argparse
 import hashlib
 import http.client
 import json
-from pathlib import Path
 import subprocess
 import sys
+from pathlib import Path
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[1]
-PACKAGES = ["onnxruntime==1.30.0", "tokenizers==0.23.2", "pypdf==6.18.1",
-            "python-docx==1.2.0", "lxml==6.1.3", "flatbuffers==25.12.19", "protobuf==6.33.5",
-            "rapidocr-onnxruntime==1.4.4", "pypdfium2==5.13.0", "opencv-python-headless==4.10.0.84",
-            "pyclipper==1.4.0", "shapely==2.1.2"]
+PACKAGES = [
+    "onnxruntime==1.30.0",
+    "tokenizers==0.23.2",
+    "pypdf==6.18.1",
+    "python-docx==1.2.0",
+    "lxml==6.1.3",
+    "flatbuffers==25.12.19",
+    "protobuf==6.33.5",
+    "rapidocr-onnxruntime==1.4.4",
+    "pypdfium2==5.13.0",
+    "opencv-python-headless==4.10.0.84",
+    "pyclipper==1.4.0",
+    "shapely==2.1.2",
+]
 
 
 def fetch(manifest, directory):
@@ -58,10 +70,29 @@ def main():
     parser.add_argument("--skip-dependencies", action="store_true")
     args = parser.parse_args()
     if not args.skip_dependencies:
-        subprocess.run([sys.executable, "-m", "pip", "install", "--disable-pip-version-check", "--no-deps",
-                        "--target", str(ROOT / "runs/dependencies/knowledge-v1"), *PACKAGES], check=True)
-    for config, folder in [("knowledge_embedding.json", "bge-small-zh-v1.5"),
-                           ("knowledge_reranker.json", "mmarco-minilm-reranker")]:
+        subprocess.run(
+            [
+                sys.executable,
+                "-B",
+                "-m",
+                "pip",
+                "install",
+                "--no-cache-dir",
+                "--no-compile",
+                "--timeout",
+                "90",
+                "--disable-pip-version-check",
+                "--no-deps",
+                "--target",
+                str(ROOT / "runs/dependencies/knowledge-v1"),
+                *PACKAGES,
+            ],
+            check=True,
+        )
+    for config, folder in [
+        ("knowledge_embedding.json", "bge-small-zh-v1.5"),
+        ("knowledge_reranker.json", "mmarco-minilm-reranker"),
+    ]:
         manifest = json.loads((ROOT / "configs/runtime" / config).read_text(encoding="utf-8"))
         fetch(manifest, ROOT / "runs/dependencies" / folder)
         print(json.dumps({"status": "ready", "model": manifest["model_id"], "revision": manifest["revision"]}))

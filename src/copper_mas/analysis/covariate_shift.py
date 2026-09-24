@@ -13,10 +13,11 @@ import math
 import platform
 import re
 import time
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -28,7 +29,6 @@ from sklearn.metrics import accuracy_score, balanced_accuracy_score, roc_auc_sco
 from sklearn.model_selection import StratifiedKFold
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import RobustScaler
-
 
 RUN_ID = "P2_COVARIATE_SHIFT_V1"
 IDENTITY_COLUMNS = ("origin_event_id", "decision_at")
@@ -132,10 +132,7 @@ def _column_tokens(column: str) -> tuple[str, ...]:
 def is_forbidden_future_or_target_column(column: str) -> bool:
     """拒绝显式 target/next/lead 字段，包含派生列中的同名 token。"""
 
-    return any(
-        token.startswith(FORBIDDEN_PREFIXES)
-        for token in _column_tokens(column)
-    )
+    return any(token.startswith(FORBIDDEN_PREFIXES) for token in _column_tokens(column))
 
 
 def is_protected_current_result_column(column: str) -> bool:
@@ -143,10 +140,7 @@ def is_protected_current_result_column(column: str) -> bool:
 
     normalized = column.lower().strip()
     base = normalized.split("__", 1)[0]
-    return any(
-        base == protected or base.startswith(f"{protected}_")
-        for protected in PROTECTED_CURRENT_RESULT_BASES
-    )
+    return any(base == protected or base.startswith(f"{protected}_") for protected in PROTECTED_CURRENT_RESULT_BASES)
 
 
 def is_process_feature(column: str) -> bool:
@@ -155,26 +149,17 @@ def is_process_feature(column: str) -> bool:
 
 def _process_feature_names(header: Sequence[str]) -> tuple[str, ...]:
     return tuple(
-        column
-        for column in header
-        if is_process_feature(column)
-        and not is_protected_current_result_column(column)
+        column for column in header if is_process_feature(column) and not is_protected_current_result_column(column)
     )
 
 
 def _raise_on_forbidden_columns(*headers: Sequence[str]) -> None:
     forbidden = sorted(
-        {
-            column
-            for header in headers
-            for column in header
-            if is_forbidden_future_or_target_column(column)
-        }
+        {column for header in headers for column in header if is_forbidden_future_or_target_column(column)}
     )
     if forbidden:
         raise SecurityBoundaryError(
-            "core_feature_matrix 含禁止的 target_/next_/lead_ 列；"
-            f"在读取数值前已拒绝：{forbidden}"
+            f"core_feature_matrix 含禁止的 target_/next_/lead_ 列；在读取数值前已拒绝：{forbidden}"
         )
 
 
@@ -214,9 +199,7 @@ def audit_headers(development_path: Path, external_path: Path) -> HeaderAudit:
             feature for feature in external_features if feature not in development_set
         ),
         protected_columns_excluded=protected,
-        development_common_order_matches=tuple(
-            feature for feature in development_features if feature in set(common)
-        )
+        development_common_order_matches=tuple(feature for feature in development_features if feature in set(common))
         == common,
         external_common_order_matches=external_common == common,
         development_header_sha256=_sha256_text(development_header),
@@ -266,19 +249,13 @@ def materialize_safe_process_view(
     _raise_on_forbidden_columns(header)
     features = _process_feature_names(header)
     if expected_feature_count is not None and len(features) != expected_feature_count:
-        raise ValueError(
-            f"过程特征数应为 {expected_feature_count}，实际为 {len(features)}。"
-        )
+        raise ValueError(f"过程特征数应为 {expected_feature_count}，实际为 {len(features)}。")
     missing_identity = [column for column in IDENTITY_COLUMNS if column not in header]
     if missing_identity:
         raise ValueError(f"完整矩阵缺少安全视图主键/时间字段：{missing_identity}")
     selected_columns = (*IDENTITY_COLUMNS, *features)
     safe_frame = _read_selected_columns(source_path, selected_columns)
-    forbidden_selected = tuple(
-        column
-        for column in safe_frame.columns
-        if is_forbidden_future_or_target_column(column)
-    )
+    forbidden_selected = tuple(column for column in safe_frame.columns if is_forbidden_future_or_target_column(column))
     protected_selected = tuple(
         column
         for column in safe_frame.columns
@@ -286,8 +263,7 @@ def materialize_safe_process_view(
     )
     if forbidden_selected or protected_selected:
         raise SecurityBoundaryError(
-            "安全视图仍含禁止字段："
-            f"future_or_target={forbidden_selected}, protected={protected_selected}"
+            f"安全视图仍含禁止字段：future_or_target={forbidden_selected}, protected={protected_selected}"
         )
     safe_view_path.parent.mkdir(parents=True, exist_ok=True)
     safe_frame.to_csv(
@@ -301,9 +277,7 @@ def materialize_safe_process_view(
     if tuple(written_header) != selected_columns:
         raise RuntimeError("安全视图写出后的字段顺序与冻结顺序不一致。")
     protected_written = tuple(
-        column
-        for column in written_header
-        if is_protected_current_result_column(column) or column == QUALITY_COLUMN
+        column for column in written_header if is_protected_current_result_column(column) or column == QUALITY_COLUMN
     )
     if protected_written:
         raise SecurityBoundaryError(f"安全视图写出后发现保护字段：{protected_written}")
@@ -314,9 +288,7 @@ def materialize_safe_process_view(
         feature_order_sha256=_sha256_text(features),
         selected_matrix_sha256=_selected_frame_sha256(safe_frame),
         excluded_protected_columns=tuple(
-            column
-            for column in header
-            if is_protected_current_result_column(column) or column == QUALITY_COLUMN
+            column for column in header if is_protected_current_result_column(column) or column == QUALITY_COLUMN
         ),
         forbidden_columns=forbidden_selected,
     )
@@ -379,16 +351,10 @@ def _psi_from_development_bins(
     development_values = development.dropna().to_numpy(dtype=float)
     external_values = external.dropna().to_numpy(dtype=float)
     edges = _fit_development_psi_bins(development_values, requested_bins)
-    development_nonmissing_counts = np.histogram(
-        development_values, bins=edges
-    )[0].astype(float)
+    development_nonmissing_counts = np.histogram(development_values, bins=edges)[0].astype(float)
     external_nonmissing_counts = np.histogram(external_values, bins=edges)[0].astype(float)
-    development_counts_with_missing = np.append(
-        development_nonmissing_counts, float(development.isna().sum())
-    )
-    external_counts_with_missing = np.append(
-        external_nonmissing_counts, float(external.isna().sum())
-    )
+    development_counts_with_missing = np.append(development_nonmissing_counts, float(development.isna().sum()))
+    external_counts_with_missing = np.append(external_nonmissing_counts, float(external.isna().sum()))
     bin_count_with_missing = len(development_counts_with_missing)
     development_prob = (development_counts_with_missing + epsilon) / (
         development_counts_with_missing.sum() + epsilon * bin_count_with_missing
@@ -396,14 +362,10 @@ def _psi_from_development_bins(
     external_prob = (external_counts_with_missing + epsilon) / (
         external_counts_with_missing.sum() + epsilon * bin_count_with_missing
     )
-    psi_including_missing = float(
-        np.sum((external_prob - development_prob) * np.log(external_prob / development_prob))
-    )
+    psi_including_missing = float(np.sum((external_prob - development_prob) * np.log(external_prob / development_prob)))
     if development_values.size and external_values.size:
         nonmissing_bin_count = len(development_nonmissing_counts)
-        development_nonmissing_prob = (
-            development_nonmissing_counts + epsilon
-        ) / (
+        development_nonmissing_prob = (development_nonmissing_counts + epsilon) / (
             development_nonmissing_counts.sum() + epsilon * nonmissing_bin_count
         )
         external_nonmissing_prob = (external_nonmissing_counts + epsilon) / (
@@ -499,18 +461,10 @@ def calculate_feature_shift_metrics(
         development_missing_rate = float(development_series.isna().mean())
         external_missing_rate = float(external_series.isna().mean())
 
-        development_median = (
-            float(development_nonmissing.median()) if len(development_nonmissing) else np.nan
-        )
-        external_median = (
-            float(external_nonmissing.median()) if len(external_nonmissing) else np.nan
-        )
-        development_q1 = (
-            float(development_nonmissing.quantile(0.25)) if len(development_nonmissing) else np.nan
-        )
-        development_q3 = (
-            float(development_nonmissing.quantile(0.75)) if len(development_nonmissing) else np.nan
-        )
+        development_median = float(development_nonmissing.median()) if len(development_nonmissing) else np.nan
+        external_median = float(external_nonmissing.median()) if len(external_nonmissing) else np.nan
+        development_q1 = float(development_nonmissing.quantile(0.25)) if len(development_nonmissing) else np.nan
+        development_q3 = float(development_nonmissing.quantile(0.75)) if len(development_nonmissing) else np.nan
         development_iqr = development_q3 - development_q1
         raw_median_difference = external_median - development_median
         if math.isfinite(development_iqr) and development_iqr > 0:
@@ -523,19 +477,15 @@ def calculate_feature_shift_metrics(
             robust_shift = np.nan
             robust_status = "DEV_IQR_ZERO_OR_UNAVAILABLE"
 
-        development_mean = (
-            float(development_nonmissing.mean()) if len(development_nonmissing) else np.nan
-        )
+        development_mean = float(development_nonmissing.mean()) if len(development_nonmissing) else np.nan
         external_mean = float(external_nonmissing.mean()) if len(external_nonmissing) else np.nan
-        development_std = (
-            float(development_nonmissing.std(ddof=1)) if len(development_nonmissing) > 1 else np.nan
+        development_std = float(development_nonmissing.std(ddof=1)) if len(development_nonmissing) > 1 else np.nan
+        external_std = float(external_nonmissing.std(ddof=1)) if len(external_nonmissing) > 1 else np.nan
+        pooled_sd = (
+            math.sqrt((development_std**2 + external_std**2) / 2.0)
+            if (math.isfinite(development_std) and math.isfinite(external_std))
+            else np.nan
         )
-        external_std = (
-            float(external_nonmissing.std(ddof=1)) if len(external_nonmissing) > 1 else np.nan
-        )
-        pooled_sd = math.sqrt((development_std**2 + external_std**2) / 2.0) if (
-            math.isfinite(development_std) and math.isfinite(external_std)
-        ) else np.nan
         raw_mean_difference = external_mean - development_mean
         if math.isfinite(pooled_sd) and pooled_sd > 0:
             smd = raw_mean_difference / pooled_sd
@@ -547,12 +497,8 @@ def calculate_feature_shift_metrics(
             smd = np.nan
             smd_status = "POOLED_SD_ZERO_OR_UNAVAILABLE"
 
-        development_min = (
-            float(development_nonmissing.min()) if len(development_nonmissing) else np.nan
-        )
-        development_max = (
-            float(development_nonmissing.max()) if len(development_nonmissing) else np.nan
-        )
+        development_min = float(development_nonmissing.min()) if len(development_nonmissing) else np.nan
+        development_max = float(development_nonmissing.max()) if len(development_nonmissing) else np.nan
         if len(external_nonmissing) and math.isfinite(development_min) and math.isfinite(development_max):
             outside_count = int(
                 ((external_nonmissing < development_min) | (external_nonmissing > development_max)).sum()
@@ -620,28 +566,16 @@ def aggregate_by_base_signal(feature_metrics: pd.DataFrame) -> pd.DataFrame:
 
     rows: list[dict[str, Any]] = []
     for base_signal, group in feature_metrics.groupby("base_signal", sort=False):
-        availability = group.loc[
-            group["shift_role"] == "MEASUREMENT_AVAILABILITY"
-        ]
-        numeric = group.loc[
-            group["shift_role"] == "NONMISSING_NUMERIC_STATE"
-        ]
+        availability = group.loc[group["shift_role"] == "MEASUREMENT_AVAILABILITY"]
+        numeric = group.loc[group["shift_role"] == "NONMISSING_NUMERIC_STATE"]
         anchor_numeric = numeric.loc[numeric["derived_feature_kind"] == "anchor_value"]
-        abs_anchor_missing = anchor_numeric[
-            "missing_rate_difference_external_minus_development"
-        ].abs()
-        numeric_conditional_psi = numeric[
-            "psi_nonmissing_only_development_fitted_bins"
-        ]
+        abs_anchor_missing = anchor_numeric["missing_rate_difference_external_minus_development"].abs()
+        numeric_conditional_psi = numeric["psi_nonmissing_only_development_fitted_bins"]
         numeric_abs_smd = numeric["standardized_mean_difference"].abs()
-        numeric_outside = numeric[
-            "external_outside_development_range_rate_nonmissing"
-        ]
-        availability_psi = availability[
-            "psi_including_missing_bin_development_fitted"
-        ]
+        numeric_outside = numeric["external_outside_development_range_rate_nonmissing"]
+        availability_psi = availability["psi_including_missing_bin_development_fitted"]
 
-        def _row(suffix: str) -> pd.Series | None:
+        def _row(suffix: str, group=group, base_signal=base_signal) -> pd.Series | None:
             matches = group.loc[group["feature_name"] == f"{base_signal}__{suffix}"]
             return None if matches.empty else matches.iloc[0]
 
@@ -664,9 +598,7 @@ def aggregate_by_base_signal(feature_metrics: pd.DataFrame) -> pd.DataFrame:
                 "t0_missing_rate_difference_external_minus_development": _value(
                     t0, "missing_rate_difference_external_minus_development"
                 ),
-                "mean12_development_missing_rate": _value(
-                    mean12, "development_missing_rate"
-                ),
+                "mean12_development_missing_rate": _value(mean12, "development_missing_rate"),
                 "mean12_external_missing_rate": _value(mean12, "external_missing_rate"),
                 "mean12_missing_rate_difference_external_minus_development": _value(
                     mean12, "missing_rate_difference_external_minus_development"
@@ -676,40 +608,26 @@ def aggregate_by_base_signal(feature_metrics: pd.DataFrame) -> pd.DataFrame:
                 "median_availability_feature_psi": availability_psi.median(),
                 "p90_availability_feature_psi": availability_psi.quantile(0.90),
                 "max_availability_feature_psi": availability_psi.max(),
-                "t0_nonmissing_psi": _value(
-                    t0, "psi_nonmissing_only_development_fitted_bins"
-                ),
+                "t0_nonmissing_psi": _value(t0, "psi_nonmissing_only_development_fitted_bins"),
                 "t0_nonmissing_smd": _value(t0, "standardized_mean_difference"),
                 "t0_external_outside_development_range_rate": _value(
                     t0, "external_outside_development_range_rate_nonmissing"
                 ),
-                "mean12_nonmissing_psi": _value(
-                    mean12, "psi_nonmissing_only_development_fitted_bins"
-                ),
-                "mean12_nonmissing_smd": _value(
-                    mean12, "standardized_mean_difference"
-                ),
+                "mean12_nonmissing_psi": _value(mean12, "psi_nonmissing_only_development_fitted_bins"),
+                "mean12_nonmissing_smd": _value(mean12, "standardized_mean_difference"),
                 "mean12_external_outside_development_range_rate": _value(
                     mean12, "external_outside_development_range_rate_nonmissing"
                 ),
                 "median_numeric_nonmissing_psi": numeric_conditional_psi.median(),
                 "p90_numeric_nonmissing_psi": numeric_conditional_psi.quantile(0.90),
                 "max_numeric_nonmissing_psi": numeric_conditional_psi.max(),
-                "numeric_columns_nonmissing_psi_ge_0_10": int(
-                    (numeric_conditional_psi >= 0.10).sum()
-                ),
-                "numeric_columns_nonmissing_psi_ge_0_25": int(
-                    (numeric_conditional_psi >= 0.25).sum()
-                ),
+                "numeric_columns_nonmissing_psi_ge_0_10": int((numeric_conditional_psi >= 0.10).sum()),
+                "numeric_columns_nonmissing_psi_ge_0_25": int((numeric_conditional_psi >= 0.25).sum()),
                 "median_abs_numeric_smd": numeric_abs_smd.median(),
                 "p90_abs_numeric_smd": numeric_abs_smd.quantile(0.90),
                 "max_abs_numeric_smd": numeric_abs_smd.max(),
-                "median_numeric_external_outside_development_range_rate": (
-                    numeric_outside.median()
-                ),
-                "max_numeric_external_outside_development_range_rate": (
-                    numeric_outside.max()
-                ),
+                "median_numeric_external_outside_development_range_rate": (numeric_outside.median()),
+                "max_numeric_external_outside_development_range_rate": (numeric_outside.max()),
             }
         )
     return pd.DataFrame(rows)
@@ -780,9 +698,7 @@ def _domain_split_specs(
             shuffle=True,
             random_state=random_state,
         )
-        for fold_index, (train_index, validation_index) in enumerate(
-            splitter.split(sample_index, domain), start=1
-        ):
+        for fold_index, (train_index, validation_index) in enumerate(splitter.split(sample_index, domain), start=1):
             specs.append(
                 {
                     "strategy": "RANDOM_STRATIFIED",
@@ -797,30 +713,20 @@ def _domain_split_specs(
                 }
             )
     if "paired_purged_time_blocks" in strategies:
-        if len(development_time) != int((domain == 0).sum()) or len(external_time) != int(
-            (domain == 1).sum()
-        ):
+        if len(development_time) != int((domain == 0).sum()) or len(external_time) != int((domain == 1).sum()):
             raise ValueError("时间序列长度与域标签长度不一致。")
-        development_order = np.argsort(
-            development_time.to_numpy(dtype="datetime64[ns]"), kind="stable"
-        )
-        external_order_local = np.argsort(
-            external_time.to_numpy(dtype="datetime64[ns]"), kind="stable"
-        )
+        development_order = np.argsort(development_time.to_numpy(dtype="datetime64[ns]"), kind="stable")
+        external_order_local = np.argsort(external_time.to_numpy(dtype="datetime64[ns]"), kind="stable")
         development_blocks = np.array_split(development_order, n_splits)
         external_blocks_local = np.array_split(external_order_local, n_splits)
         external_offset = len(development_time)
-        combined_time = pd.concat(
-            [development_time, external_time], ignore_index=True
-        )
+        combined_time = pd.concat([development_time, external_time], ignore_index=True)
         gap = pd.Timedelta(hours=purge_gap_hours)
         for fold_index, (development_block, external_block_local) in enumerate(
             zip(development_blocks, external_blocks_local, strict=True), start=1
         ):
             external_block = external_block_local + external_offset
-            validation_index = np.concatenate(
-                [development_block, external_block]
-            ).astype(int)
+            validation_index = np.concatenate([development_block, external_block]).astype(int)
             train_mask = np.ones(len(domain), dtype=bool)
             train_mask[validation_index] = False
 
@@ -830,12 +736,16 @@ def _domain_split_specs(
             external_end = external_time.iloc[external_block_local].max()
             development_train_candidates = np.where(train_mask & (domain == 0))[0]
             external_train_candidates = np.where(train_mask & (domain == 1))[0]
-            development_keep = ~combined_time.iloc[development_train_candidates].between(
-                development_start - gap, development_end + gap, inclusive="both"
-            ).to_numpy()
-            external_keep = ~combined_time.iloc[external_train_candidates].between(
-                external_start - gap, external_end + gap, inclusive="both"
-            ).to_numpy()
+            development_keep = (
+                ~combined_time.iloc[development_train_candidates]
+                .between(development_start - gap, development_end + gap, inclusive="both")
+                .to_numpy()
+            )
+            external_keep = (
+                ~combined_time.iloc[external_train_candidates]
+                .between(external_start - gap, external_end + gap, inclusive="both")
+                .to_numpy()
+            )
             train_index = np.concatenate(
                 [
                     development_train_candidates[development_keep],
@@ -855,9 +765,7 @@ def _domain_split_specs(
                     "external_validation_end": external_end,
                 }
             )
-    unknown = sorted(
-        set(strategies) - {"random_stratified", "paired_purged_time_blocks"}
-    )
+    unknown = sorted(set(strategies) - {"random_stratified", "paired_purged_time_blocks"})
     if unknown:
         raise ValueError(f"未知域交叉验证策略：{unknown}")
     return specs
@@ -880,14 +788,10 @@ def run_domain_separability_diagnostic(
     if tuple(development.columns) != tuple(external.columns):
         raise ValueError("域分类器输入的特征列或顺序不一致。")
     combined = pd.concat([development, external], ignore_index=True)
-    domain = np.concatenate(
-        [np.zeros(len(development), dtype=int), np.ones(len(external), dtype=int)]
-    )
+    domain = np.concatenate([np.zeros(len(development), dtype=int), np.ones(len(external), dtype=int)])
     if min(np.bincount(domain)) < n_splits:
         raise ValueError("每个时期的样本数必须不少于域分类交叉验证折数。")
-    if "paired_purged_time_blocks" in cv_strategies and (
-        development_time is None or external_time is None
-    ):
+    if "paired_purged_time_blocks" in cv_strategies and (development_time is None or external_time is None):
         raise ValueError("连续时间块域诊断需要两期 decision_at。")
     split_specs = _domain_split_specs(
         development_time
@@ -910,9 +814,7 @@ def run_domain_separability_diagnostic(
             validation_index = np.asarray(spec["validation_index"], dtype=int)
             pipeline = _domain_pipeline(
                 model_name,
-                random_state
-                + fold_index
-                + (100 if spec["strategy"].startswith("PAIRED") else 0),
+                random_state + fold_index + (100 if spec["strategy"].startswith("PAIRED") else 0),
             )
             started = time.perf_counter()
             pipeline.fit(combined.iloc[train_index], domain[train_index])
@@ -938,21 +840,15 @@ def run_domain_separability_diagnostic(
                     "fit_time_seconds": fit_seconds,
                     "preprocessing_fit_scope": "DOMAIN_TRAIN_FOLD_ONLY",
                     "purge_gap_hours": spec["purge_gap_hours"],
-                    "development_validation_start": spec[
-                        "development_validation_start"
-                    ],
-                    "development_validation_end": spec[
-                        "development_validation_end"
-                    ],
+                    "development_validation_start": spec["development_validation_start"],
+                    "development_validation_end": spec["development_validation_end"],
                     "external_validation_start": spec["external_validation_start"],
                     "external_validation_end": spec["external_validation_end"],
                 }
             )
     fold_metrics = pd.DataFrame(rows)
     summary_rows: list[dict[str, Any]] = []
-    for (model_name, cv_strategy), group in fold_metrics.groupby(
-        ["model_name", "cv_strategy"], sort=False
-    ):
+    for (model_name, cv_strategy), group in fold_metrics.groupby(["model_name", "cv_strategy"], sort=False):
         summary_rows.append(
             {
                 "run_id": RUN_ID,
@@ -1013,17 +909,11 @@ def _render_report(
     domain_summary: pd.DataFrame,
     domain_enabled: bool,
 ) -> str:
-    psi_including_missing = feature_metrics[
-        "psi_including_missing_bin_development_fitted"
-    ]
-    numeric_rows = feature_metrics.loc[
-        feature_metrics["shift_role"] == "NONMISSING_NUMERIC_STATE"
-    ]
+    psi_including_missing = feature_metrics["psi_including_missing_bin_development_fitted"]
+    numeric_rows = feature_metrics.loc[feature_metrics["shift_role"] == "NONMISSING_NUMERIC_STATE"]
     numeric_psi = numeric_rows["psi_nonmissing_only_development_fitted_bins"]
     numeric_abs_smd = numeric_rows["standardized_mean_difference"].abs()
-    numeric_outside = numeric_rows[
-        "external_outside_development_range_rate_nonmissing"
-    ]
+    numeric_outside = numeric_rows["external_outside_development_range_rate_nonmissing"]
     ranked_availability = base_summary.sort_values(
         [
             "median_abs_anchor_missing_rate_difference",
@@ -1061,13 +951,9 @@ def _render_report(
         f"- 2026 外部期行数：{external_rows:,}。",
         f"- 共同冻结过程衍生特征：{len(header_audit.common_process_features):,} 列。",
         f"- 基础过程信号：{base_summary['base_signal'].nunique():,} 个。",
-        (
-            "- 完整表中的 `origin_cu_g_l`、`origin_as_mg_l` 及其近似/派生命名在数值读取阶段前已排除。"
-        ),
+        ("- 完整表中的 `origin_cu_g_l`、`origin_as_mg_l` 及其近似/派生命名在数值读取阶段前已排除。"),
         "- `target_`、`next_`、`lead_` 禁列检查：通过（实际载入列中为 0）。",
-        (
-            f"- 共同特征顺序 SHA256：`{header_audit.common_feature_order_sha256}`。"
-        ),
+        (f"- 共同特征顺序 SHA256：`{header_audit.common_feature_order_sha256}`。"),
         (
             "- 2026 共同特征顺序与开发期冻结顺序："
             + ("一致。" if header_audit.external_common_order_matches else "不一致。")
@@ -1076,10 +962,7 @@ def _render_report(
         "## 3. 漂移指标如何理解",
         "",
         "- 缺失率差 = 2026 缺失率 − 2024—2025 缺失率。",
-        (
-            "- 稳健中位数位移 =（2026 中位数 − 开发期中位数）/ 开发期 IQR；"
-            "开发期 IQR 为 0 时不强行制造有限数值。"
-        ),
+        ("- 稳健中位数位移 =（2026 中位数 − 开发期中位数）/ 开发期 IQR；开发期 IQR 为 0 时不强行制造有限数值。"),
         "- SMD 使用两个时期非缺失值的合并标准差，仅作描述性尺度统一。",
         (
             "- PSI 的分箱边界只由 2024—2025 开发期十分位数拟合，2026 只被投影到已冻结边界。"
@@ -1117,22 +1000,23 @@ def _render_report(
             "它反映数据采集/对齐可用性，不等同于电流、流量、温度等物理量本身发生变化。"
         ),
         "",
-        "| 基础信号 | 中文含义 | t0开发缺失率 | t0外部缺失率 | t0缺失率差 | mean12缺失率差 | 锚点缺失率差绝对值中位数 | 可用性特征PSI中位数 |",
+        (
+            "| 基础信号 | 中文含义 | t0开发缺失率 | t0外部缺失率 | t0缺失率差 |"
+            " mean12缺失率差 | 锚点缺失率差绝对值中位数 | 可用性特征PSI中位数 |"
+        ),
         "|---|---|---:|---:|---:|---:|---:|---:|",
     ]
     for _, row in ranked_availability.iterrows():
         lines.append(
-            "| {base} | {cn} | {dev_miss} | {ext_miss} | {t0_diff} | {mean_diff} | {anchor_diff} | {avail_psi} |".format(
+            (
+                "| {base} | {cn} | {dev_miss} | {ext_miss} | {t0_diff} | {mean_diff} | {anchor_diff} | {avail_psi} |"
+            ).format(
                 base=row["base_signal"],
                 cn=row["基础信号中文名"] or "—",
                 dev_miss=_fmt(row["t0_development_missing_rate"], 4),
                 ext_miss=_fmt(row["t0_external_missing_rate"], 4),
-                t0_diff=_fmt(
-                    row["t0_missing_rate_difference_external_minus_development"], 4
-                ),
-                mean_diff=_fmt(
-                    row["mean12_missing_rate_difference_external_minus_development"], 4
-                ),
+                t0_diff=_fmt(row["t0_missing_rate_difference_external_minus_development"], 4),
+                mean_diff=_fmt(row["mean12_missing_rate_difference_external_minus_development"], 4),
                 anchor_diff=_fmt(row["median_abs_anchor_missing_rate_difference"], 4),
                 avail_psi=_fmt(row["median_availability_feature_psi"]),
             )
@@ -1147,13 +1031,19 @@ def _render_report(
                 "该表更接近物理状态差异，但仍是关联性描述，且可能受记录口径和仪表变化影响。"
             ),
             "",
-            "| 基础信号 | 中文含义 | t0非缺失PSI | t0 SMD | mean12非缺失PSI | mean12 SMD | 数值特征PSI中位数 | 数值特征SMD绝对值中位数 | t0超范围率 |",
+            (
+                "| 基础信号 | 中文含义 | t0非缺失PSI | t0 SMD | mean12非缺失PSI | m"
+                "ean12 SMD | 数值特征PSI中位数 | 数值特征SMD绝对值中位数 | t0超范围"
+                "率 |"
+            ),
             "|---|---|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
     for _, row in ranked_numeric.iterrows():
         lines.append(
-            "| {base} | {cn} | {t0_psi} | {t0_smd} | {mean_psi} | {mean_smd} | {psi_med} | {smd_med} | {outside} |".format(
+            (
+                "| {base} | {cn} | {t0_psi} | {t0_smd} | {mean_psi} | {mean_smd} | {psi_med} | {smd_med} | {outside} |"
+            ).format(
                 base=row["base_signal"],
                 cn=row["基础信号中文名"] or "—",
                 t0_psi=_fmt(row["t0_nonmissing_psi"]),
@@ -1162,9 +1052,7 @@ def _render_report(
                 mean_smd=_fmt(row["mean12_nonmissing_smd"]),
                 psi_med=_fmt(row["median_numeric_nonmissing_psi"]),
                 smd_med=_fmt(row["median_abs_numeric_smd"]),
-                outside=_fmt(
-                    row["t0_external_outside_development_range_rate"], 4
-                ),
+                outside=_fmt(row["t0_external_outside_development_range_rate"], 4),
             )
         )
     lines.extend(["", "## 6. 域可分性诊断", ""])
@@ -1236,13 +1124,14 @@ def _render_report(
             ),
         ]
     )
-    hgb_block = domain_summary.loc[
-        (domain_summary.get("model_name") == "HistGradientBoosting")
-        & (
-            domain_summary.get("cv_strategy")
-            == "PAIRED_PURGED_CONTIGUOUS_TIME_BLOCK"
-        )
-    ] if not domain_summary.empty else pd.DataFrame()
+    hgb_block = (
+        domain_summary.loc[
+            (domain_summary.get("model_name") == "HistGradientBoosting")
+            & (domain_summary.get("cv_strategy") == "PAIRED_PURGED_CONTIGUOUS_TIME_BLOCK")
+        ]
+        if not domain_summary.empty
+        else pd.DataFrame()
+    )
     if not hgb_block.empty:
         lines.append(
             "非线性域诊断在带 24 小时净空区的连续时间块留出中 ROC AUC 为 "
@@ -1308,13 +1197,9 @@ def run_covariate_shift_audit(
     header_audit = audit_headers(development_path, external_safe_path)
     common_features = header_audit.common_process_features
     if expected_feature_count is not None and len(common_features) != expected_feature_count:
-        raise ValueError(
-            f"共同冻结过程特征数应为 {expected_feature_count}，实际为 {len(common_features)}。"
-        )
+        raise ValueError(f"共同冻结过程特征数应为 {expected_feature_count}，实际为 {len(common_features)}。")
     if header_audit.development_only_process_features or header_audit.external_only_process_features:
-        raise ValueError(
-            "两期过程特征集合不完全一致；为避免悄悄改变冻结输入，已拒绝继续。"
-        )
+        raise ValueError("两期过程特征集合不完全一致；为避免悄悄改变冻结输入，已拒绝继续。")
     if not header_audit.external_common_order_matches:
         raise ValueError("2026 安全视图的过程特征顺序与开发期冻结顺序不一致。")
 
@@ -1327,9 +1212,7 @@ def run_covariate_shift_audit(
     )
     base_summary = aggregate_by_base_signal(feature_metrics)
     if expected_base_signal_count is not None and len(base_summary) != expected_base_signal_count:
-        raise ValueError(
-            f"基础信号数应为 {expected_base_signal_count}，实际为 {len(base_summary)}。"
-        )
+        raise ValueError(f"基础信号数应为 {expected_base_signal_count}，实际为 {len(base_summary)}。")
 
     if run_domain_classifier:
         development_time = _load_identity_time(development_path)
@@ -1423,20 +1306,12 @@ def run_covariate_shift_audit(
         "development_header_sha256": header_audit.development_header_sha256,
         "external_safe_header_sha256": header_audit.external_header_sha256,
         "common_feature_order_sha256": header_audit.common_feature_order_sha256,
-        "development_process_feature_count": len(
-            header_audit.development_process_features
-        ),
+        "development_process_feature_count": len(header_audit.development_process_features),
         "external_process_feature_count": len(header_audit.external_process_features),
         "common_process_feature_count": len(common_features),
-        "development_only_process_features": list(
-            header_audit.development_only_process_features
-        ),
-        "external_only_process_features": list(
-            header_audit.external_only_process_features
-        ),
-        "protected_columns_excluded_before_value_read": list(
-            header_audit.protected_columns_excluded
-        ),
+        "development_only_process_features": list(header_audit.development_only_process_features),
+        "external_only_process_features": list(header_audit.external_only_process_features),
+        "protected_columns_excluded_before_value_read": list(header_audit.protected_columns_excluded),
         "forbidden_columns_loaded": [],
         "development_order_matches": header_audit.development_common_order_matches,
         "external_order_matches": header_audit.external_common_order_matches,
@@ -1456,9 +1331,7 @@ def run_covariate_shift_audit(
         encoding="utf-8",
     )
 
-    output_hashes = {
-        path.name: sha256_file(path) for path in artifact_paths.values()
-    }
+    output_hashes = {path.name: sha256_file(path) for path in artifact_paths.values()}
     safe_header = read_csv_header(external_safe_path)
     forbidden_in_safe = [
         column
@@ -1469,7 +1342,7 @@ def run_covariate_shift_audit(
     ]
     manifest: dict[str, Any] = {
         "run_id": RUN_ID,
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "duration_seconds": time.perf_counter() - started,
         "inputs": {
             "development_path": str(development_path),
@@ -1479,9 +1352,7 @@ def run_covariate_shift_audit(
             "full_file_hash_omission_reason": (
                 "不扫描含保护列的完整文件正文；仅对显式 usecols 后的安全矩阵形成内容指纹。"
             ),
-            "development_selected_process_matrix_sha256": _selected_frame_sha256(
-                development
-            ),
+            "development_selected_process_matrix_sha256": _selected_frame_sha256(development),
             "external_selected_process_matrix_sha256": _selected_frame_sha256(external),
             "feature_order_sha256": header_audit.common_feature_order_sha256,
             "safe_view_metadata": dict(safe_view_metadata or {}),
@@ -1511,24 +1382,16 @@ def run_covariate_shift_audit(
                 "conditional_numeric_psi_excludes_missing_bin": True,
             },
             "domain_classifier_enabled": run_domain_classifier,
-            "domain_classifier_models": domain_summary["model_name"]
-            .drop_duplicates()
-            .tolist()
+            "domain_classifier_models": domain_summary["model_name"].drop_duplicates().tolist()
             if not domain_summary.empty
             else [],
-            "domain_cv": (
-                list(domain_cv_strategies)
-            ),
+            "domain_cv": (list(domain_cv_strategies)),
             "domain_time_block_purge_gap_hours": domain_purge_gap_hours,
-            "domain_cv_strategies_reported": domain_summary["cv_strategy"]
-            .drop_duplicates()
-            .tolist()
+            "domain_cv_strategies_reported": domain_summary["cv_strategy"].drop_duplicates().tolist()
             if not domain_summary.empty
             else [],
             "domain_preprocessing_fit_scope": "DOMAIN_TRAIN_FOLD_ONLY",
-            "domain_classifier_interpretation": (
-                "X 时期可分性诊断；不是 Cu/As 预测器，不表示外部预测误差。"
-            ),
+            "domain_classifier_interpretation": ("X 时期可分性诊断；不是 Cu/As 预测器，不表示外部预测误差。"),
             "correlated_feature_control": "702 DERIVED COLUMNS AGGREGATED TO 27 BASE SIGNALS",
         },
         "safety": {

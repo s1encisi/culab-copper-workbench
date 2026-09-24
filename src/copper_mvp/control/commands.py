@@ -1,4 +1,5 @@
 """Exact approvals, persistent outbox and fenced command reconciliation."""
+
 from __future__ import annotations
 
 import json
@@ -9,7 +10,7 @@ import time
 import uuid
 
 from copper_mvp.common import WorkbenchError, digest, dumps
-from copper_mvp.control.contracts import DEVICE, POLICY, NOTICE, TERMINAL, ProposalInput, ApprovalInput
+from copper_mvp.control.contracts import DEVICE, NOTICE, POLICY, TERMINAL, ApprovalInput, ProposalInput
 from copper_mvp.control.mock import MockDevice
 from copper_mvp.control.reconcile import reconcile_feedback
 
@@ -79,19 +80,28 @@ class CommandService:
 
     @staticmethod
     def event(c, identifier, kind, detail):
-        c.execute("INSERT INTO command_events(command_id,kind,occurred_at,detail) VALUES(?,?,?,?)",
-                  (identifier, kind, time.time(), dumps(detail)))
+        c.execute(
+            "INSERT INTO command_events(command_id,kind,occurred_at,detail) VALUES(?,?,?,?)",
+            (identifier, kind, time.time(), dumps(detail)),
+        )
 
     def _public(self, row):
-        value = {k: row[k] for k in ("id", "owner_id", "project_id", "status", "payload_hash", "cancel_requested", "created_at")}
+        value = {
+            k: row[k]
+            for k in ("id", "owner_id", "project_id", "status", "payload_hash", "cancel_requested", "created_at")
+        }
         value.update(payload=json.loads(row["payload"]), result=json.loads(row["result"]), notice=NOTICE)
         approval = json.loads(row["approval"]) if row["approval"] else None
         if approval:
             approval.pop("auth", None)
         value["approval"] = approval
         with self.connection() as c:
-            value["events"] = [dict(r) for r in c.execute("SELECT * FROM command_events WHERE command_id=? ORDER BY seq", (row["id"],))]
-            value["outbox"] = dict(c.execute("SELECT * FROM command_outbox WHERE command_id=?", (row["id"],)).fetchone() or {})
+            value["events"] = [
+                dict(r) for r in c.execute("SELECT * FROM command_events WHERE command_id=? ORDER BY seq", (row["id"],))
+            ]
+            value["outbox"] = dict(
+                c.execute("SELECT * FROM command_outbox WHERE command_id=?", (row["id"],)).fetchone() or {}
+            )
         for event in value["events"]:
             event["detail"] = json.loads(event["detail"])
         return value
@@ -107,8 +117,13 @@ class CommandService:
     def list(self, actor):
         actor.require("read")
         with self.connection() as c:
-            rows = c.execute("SELECT * FROM control_commands WHERE project_id=? AND (owner_id=? OR ?='owner') ORDER BY created_at DESC LIMIT 100",
-                             (actor.project_id, actor.user_id, actor.role)).fetchall()
+            rows = c.execute(
+                (
+                    "SELECT * FROM control_commands WHERE project_id=? AND (owner_id=? "
+                    "OR ?='owner') ORDER BY created_at DESC LIMIT 100"
+                ),
+                (actor.project_id, actor.user_id, actor.role),
+            ).fetchall()
         return [self._public(dict(row)) for row in rows]
 
     def propose(self, actor, request):
@@ -116,41 +131,86 @@ class CommandService:
         request = ProposalInput.model_validate(request).model_dump()
         fingerprint = digest(request)
         with self.connection() as c:
-            existing = c.execute("SELECT * FROM control_commands WHERE project_id=? AND owner_id=? AND request_key=?",
-                                 (actor.project_id, actor.user_id, request["request_key"])).fetchone()
+            existing = c.execute(
+                "SELECT * FROM control_commands WHERE project_id=? AND owner_id=? AND request_key=?",
+                (actor.project_id, actor.user_id, request["request_key"]),
+            ).fetchone()
         if existing:
             if existing["fingerprint"] != fingerprint:
                 raise WorkbenchError("请求键已用于不同参数", "REQUEST_CONFLICT")
             return self.get(actor, existing["id"])
         state = self.require_client().read_state()
         identifier, now = uuid.uuid4().hex, time.time()
-        payload = {"schema_version": "command.v2", "command_id": identifier, "task_id": identifier,
-                   "trace_id": uuid.uuid4().hex, "project_id": actor.project_id, "actor_id": actor.user_id,
-                   "environment": "MOCK", "policy_ref": POLICY, "device_id": DEVICE, "risk_level": "R3_MOCK_WRITE",
-                   "request": request, "expected_state_version": state["state_version"],
-                   "expected_device_epoch": state["device_epoch"], "created_at": now,
-                   "expires_at": now + request["ttl_seconds"], "approval_nonce": uuid.uuid4().hex,
-                   "preconditions": {"mode": "remote", "estop_latched": False, "interlocks_ok": True, "max_state_age_ms": 1000},
-                   "limits": {"max_delta": 10., "max_rate_per_second": 10., "unit": "A", "minimum": 0., "maximum": 200.},
-                   "verification": {"required_good_samples": 3, "tolerance": request["tolerance"],
-                                    "settling_deadline_seconds": request["settling_deadline_seconds"], "unit": "A"},
-                   "evidence": {"observation_seq": state["observation_seq"], "virtual_time": state["virtual_time"],
-                                "points": state["points"]}}
+        payload = {
+            "schema_version": "command.v2",
+            "command_id": identifier,
+            "task_id": identifier,
+            "trace_id": uuid.uuid4().hex,
+            "project_id": actor.project_id,
+            "actor_id": actor.user_id,
+            "environment": "MOCK",
+            "policy_ref": POLICY,
+            "device_id": DEVICE,
+            "risk_level": "R3_MOCK_WRITE",
+            "request": request,
+            "expected_state_version": state["state_version"],
+            "expected_device_epoch": state["device_epoch"],
+            "created_at": now,
+            "expires_at": now + request["ttl_seconds"],
+            "approval_nonce": uuid.uuid4().hex,
+            "preconditions": {
+                "mode": "remote",
+                "estop_latched": False,
+                "interlocks_ok": True,
+                "max_state_age_ms": 1000,
+            },
+            "limits": {"max_delta": 10.0, "max_rate_per_second": 10.0, "unit": "A", "minimum": 0.0, "maximum": 200.0},
+            "verification": {
+                "required_good_samples": 3,
+                "tolerance": request["tolerance"],
+                "settling_deadline_seconds": request["settling_deadline_seconds"],
+                "unit": "A",
+            },
+            "evidence": {
+                "observation_seq": state["observation_seq"],
+                "virtual_time": state["virtual_time"],
+                "points": state["points"],
+            },
+        }
         MockDevice.validate(payload, state)
         with self.connection() as c:
             c.execute("BEGIN IMMEDIATE")
-            existing = c.execute("SELECT * FROM control_commands WHERE project_id=? AND owner_id=? AND request_key=?",
-                                 (actor.project_id, actor.user_id, request["request_key"])).fetchone()
+            existing = c.execute(
+                "SELECT * FROM control_commands WHERE project_id=? AND owner_id=? AND request_key=?",
+                (actor.project_id, actor.user_id, request["request_key"]),
+            ).fetchone()
             if existing:
                 if existing["fingerprint"] != fingerprint:
                     raise WorkbenchError("请求键已用于不同参数", "REQUEST_CONFLICT")
                 identifier = existing["id"]
             else:
-                c.execute("""INSERT INTO control_commands(id,owner_id,project_id,request_key,fingerprint,payload,payload_hash,
+                c.execute(
+                    """INSERT INTO control_commands(id,owner_id,project_id,request_key,fingerprint,payload,payload_hash,
                     actor_auth,status,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-                    (identifier, actor.user_id, actor.project_id, request["request_key"], fingerprint,
-                     dumps(payload), digest(payload), dumps(self.auth(actor)), "WAITING_APPROVAL", now))
-                self.event(c, identifier, "PROPOSED", {"payload_hash": digest(payload), "state_version": state["state_version"]})
+                    (
+                        identifier,
+                        actor.user_id,
+                        actor.project_id,
+                        request["request_key"],
+                        fingerprint,
+                        dumps(payload),
+                        digest(payload),
+                        dumps(self.auth(actor)),
+                        "WAITING_APPROVAL",
+                        now,
+                    ),
+                )
+                self.event(
+                    c,
+                    identifier,
+                    "PROPOSED",
+                    {"payload_hash": digest(payload), "state_version": state["state_version"]},
+                )
         return self.get(actor, identifier)
 
     def approve(self, actor, identifier, decision):
@@ -160,7 +220,10 @@ class CommandService:
         with self.connection() as c:
             c.execute("BEGIN IMMEDIATE")
             row = self._row(c, identifier)
-            if decision.payload_hash != row["payload_hash"] or digest(json.loads(row["payload"])) != row["payload_hash"]:
+            if (
+                decision.payload_hash != row["payload_hash"]
+                or digest(json.loads(row["payload"])) != row["payload_hash"]
+            ):
                 raise WorkbenchError("审批必须绑定当前完整命令", "PAYLOAD_CONFLICT")
             if row["status"] != "WAITING_APPROVAL":
                 if row["approval"] and json.loads(row["approval"])["decision"] == decision.decision:
@@ -168,12 +231,22 @@ class CommandService:
                 raise WorkbenchError("命令状态不允许审批", "COMMAND_STATE")
             if time.time() >= json.loads(row["payload"])["expires_at"]:
                 raise WorkbenchError("提案已过期，请重新创建", "COMMAND_EXPIRED")
-            approval = {"id": uuid.uuid4().hex, "approver_id": actor.user_id, "role": actor.role,
-                        "payload_hash": row["payload_hash"], "policy_ref": POLICY,
-                        "auth": self.auth(actor), "approved_at": time.time(), "revoked": False,
-                        "decision": decision.decision, "reason": decision.reason}
+            approval = {
+                "id": uuid.uuid4().hex,
+                "approver_id": actor.user_id,
+                "role": actor.role,
+                "payload_hash": row["payload_hash"],
+                "policy_ref": POLICY,
+                "auth": self.auth(actor),
+                "approved_at": time.time(),
+                "revoked": False,
+                "decision": decision.decision,
+                "reason": decision.reason,
+            }
             status = "QUEUED" if decision.decision == "approve" else "REJECTED"
-            c.execute("UPDATE control_commands SET approval=?,status=? WHERE id=?", (dumps(approval), status, identifier))
+            c.execute(
+                "UPDATE control_commands SET approval=?,status=? WHERE id=?", (dumps(approval), status, identifier)
+            )
             if status == "QUEUED":
                 c.execute("INSERT INTO command_outbox(command_id,state) VALUES(?,'ready')", (identifier,))
             self.event(c, identifier, status, {"approval_id": approval["id"], "approver_id": actor.user_id})
@@ -191,12 +264,21 @@ class CommandService:
                 c.execute("UPDATE control_commands SET approval=? WHERE id=?", (dumps(approval), identifier))
             if row["status"] not in TERMINAL:
                 unsent = row["status"] in {"WAITING_APPROVAL", "QUEUED"}
-                c.execute("UPDATE control_commands SET cancel_requested=1,status=? WHERE id=?",
-                          ("CANCELLED" if unsent else row["status"], identifier))
+                c.execute(
+                    "UPDATE control_commands SET cancel_requested=1,status=? WHERE id=?",
+                    ("CANCELLED" if unsent else row["status"], identifier),
+                )
                 if unsent:
                     c.execute("UPDATE command_outbox SET state='finished' WHERE command_id=?", (identifier,))
-                self.event(c, identifier, "APPROVAL_REVOKED" if revoke else "CANCEL_REQUESTED",
-                           {"submitted": not unsent, "action": "continue_reconciliation" if not unsent else "stop_before_dispatch"})
+                self.event(
+                    c,
+                    identifier,
+                    "APPROVAL_REVOKED" if revoke else "CANCEL_REQUESTED",
+                    {
+                        "submitted": not unsent,
+                        "action": "continue_reconciliation" if not unsent else "stop_before_dispatch",
+                    },
+                )
         return self.get(actor, identifier)
 
     def _claim(self, identifier):
@@ -213,16 +295,31 @@ class CommandService:
                     return None
             if lease and lease["worker_id"] != self.worker_id and lease["expires_at"] > now:
                 return None
-            token = lease["fencing_token"] if lease and lease["worker_id"] == self.worker_id and lease["command_id"] == identifier and lease["expires_at"] > now else (lease["fencing_token"] + 1 if lease else 1)
+            token = (
+                lease["fencing_token"]
+                if lease
+                and lease["worker_id"] == self.worker_id
+                and lease["command_id"] == identifier
+                and lease["expires_at"] > now
+                else (lease["fencing_token"] + 1 if lease else 1)
+            )
             expires = now + 10
-            c.execute("INSERT OR REPLACE INTO device_leases VALUES(?,?,?,?,?)", (DEVICE, self.worker_id, token, expires, identifier))
+            c.execute(
+                "INSERT OR REPLACE INTO device_leases VALUES(?,?,?,?,?)",
+                (DEVICE, self.worker_id, token, expires, identifier),
+            )
             outbox = dict(c.execute("SELECT * FROM command_outbox WHERE command_id=?", (identifier,)).fetchone())
         return row, outbox, token, expires
 
     def _live(self, c, identifier, token):
         row = c.execute("SELECT * FROM device_leases WHERE device_id=?", (DEVICE,)).fetchone()
-        return bool(row and row["worker_id"] == self.worker_id and row["command_id"] == identifier
-                    and row["fencing_token"] == token and row["expires_at"] > time.time())
+        return bool(
+            row
+            and row["worker_id"] == self.worker_id
+            and row["command_id"] == identifier
+            and row["fencing_token"] == token
+            and row["expires_at"] > time.time()
+        )
 
     def _finish_step(self, identifier, token, status, result, outbox_state):
         with self.connection() as c:
@@ -267,17 +364,28 @@ class CommandService:
                     if current["status"] != "QUEUED" or not self._live(c, identifier, token):
                         return
                     payload = self._validate_authority(current)
-                    c.execute("UPDATE command_outbox SET state='dispatching',attempts=attempts+1 WHERE command_id=?", (identifier,))
+                    c.execute(
+                        "UPDATE command_outbox SET state='dispatching',attempts=attempts+1 WHERE command_id=?",
+                        (identifier,),
+                    )
                     c.execute("UPDATE control_commands SET status='DISPATCHING' WHERE id=?", (identifier,))
                     self.event(c, identifier, "DISPATCHING", {"fencing_token": token})
             except WorkbenchError as exc:
-                self._finish_step(identifier, token, "EXPIRED" if exc.code == "COMMAND_EXPIRED" else "REJECTED",
-                                  {"reason": str(exc), "code": exc.code}, "finished")
+                self._finish_step(
+                    identifier,
+                    token,
+                    "EXPIRED" if exc.code == "COMMAND_EXPIRED" else "REJECTED",
+                    {"reason": str(exc), "code": exc.code},
+                    "finished",
+                )
                 return
             try:
                 receipt = self.require_client().submit_command(payload, row["payload_hash"], token, lease_until)
-                result = {"ack_received": receipt.get("ack_received", False), "receipt": receipt,
-                          "reason": "发送已返回，等待独立回读"}
+                result = {
+                    "ack_received": receipt.get("ack_received", False),
+                    "receipt": receipt,
+                    "reason": "发送已返回，等待独立回读",
+                }
                 status = "VERIFYING"
             except WorkbenchError as exc:
                 status = "UNKNOWN_OUTCOME" if exc.code == "MOCK_TRANSPORT" else "REJECTED"
@@ -288,8 +396,9 @@ class CommandService:
         try:
             record = self.require_client().get_command_status(identifier)
             state = self.require_client().read_state()
-            status, result = reconcile_feedback({**payload, "canonical_payload_hash": row["payload_hash"]},
-                                                record, state, json.loads(row["result"]))
+            status, result = reconcile_feedback(
+                {**payload, "canonical_payload_hash": row["payload_hash"]}, record, state, json.loads(row["result"])
+            )
         except WorkbenchError as exc:
             status, result = "UNKNOWN_OUTCOME", {**json.loads(row["result"]), "reason": str(exc), "code": exc.code}
         self._finish_step(identifier, token, status, result, "finished" if status in TERMINAL else "observing")
@@ -299,13 +408,17 @@ class CommandService:
             return
         with self.step_lock:
             with self.connection() as c:
-                rows = c.execute("""SELECT o.command_id FROM command_outbox o JOIN control_commands c ON c.id=o.command_id
-                    WHERE o.state!='finished' ORDER BY c.created_at""").fetchall()
+                rows = c.execute(
+                    "SELECT o.command_id FROM command_outbox o JOIN control_commands c "
+                    "ON c.id=o.command_id\n"
+                    "                    WHERE o.state!='finished' ORDER BY c.created_a"
+                    "t"
+                ).fetchall()
             for row in rows:
                 self._execute(row["command_id"])
 
     def _loop(self):
-        while not self.stopped.wait(.2):
+        while not self.stopped.wait(0.2):
             try:
                 self.step()
             except Exception:

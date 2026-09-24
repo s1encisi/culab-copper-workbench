@@ -6,11 +6,10 @@ import argparse
 import hashlib
 import json
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC = PROJECT_ROOT / "src"
@@ -65,13 +64,9 @@ def run_smoke(input_dir: Path, output_dir: Path) -> dict[str, object]:
     origin_event_id = str(eligible.sort_values("origin_recorded_at").iloc[0]["origin_event_id"])
 
     feature_frame = pd.read_csv(sources["features"], low_memory=False)
-    feature_match = feature_frame.loc[
-        feature_frame["origin_event_id"].astype(str) == origin_event_id
-    ]
+    feature_match = feature_frame.loc[feature_frame["origin_event_id"].astype(str) == origin_event_id]
     admission_frame = pd.read_csv(sources["admission"], low_memory=False)
-    admission_match = admission_frame.loc[
-        admission_frame["origin_event_id"].astype(str) == origin_event_id
-    ]
+    admission_match = admission_frame.loc[admission_frame["origin_event_id"].astype(str) == origin_event_id]
     if len(feature_match) != 1 or len(admission_match) != 1:
         raise ValueError("smoke 样本的特征或准入卡不唯一")
     feature_row = feature_match.iloc[0].to_dict()
@@ -148,7 +143,7 @@ def run_smoke(input_dir: Path, output_dir: Path) -> dict[str, object]:
         )
     manifest: dict[str, object] = {
         "run_id": plan.run_id,
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "sample_scope": "single_2024_2025_development_smoke",
         "outcome_ledger_read": False,
         "external_2026_read": False,

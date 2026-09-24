@@ -16,7 +16,6 @@ from copper_mas.llm.adapters import (
     StructuredTask,
 )
 
-
 T = TypeVar("T", bound=BaseModel)
 
 
@@ -49,9 +48,7 @@ class CallBudget:
     ) -> None:
         if max_calls <= 0:
             raise ValueError("max_calls 必须大于0")
-        if max_cost_cny is not None and (
-            not math.isfinite(max_cost_cny) or max_cost_cny <= 0
-        ):
+        if max_cost_cny is not None and (not math.isfinite(max_cost_cny) or max_cost_cny <= 0):
             raise ValueError("max_cost_cny 必须是大于0的有限数")
         limits = dict(provider_call_limits or {})
         if any(not name or limit <= 0 for name, limit in limits.items()):
@@ -87,22 +84,13 @@ class CallBudget:
         if self.used_calls >= self.max_calls:
             raise ExternalLLMBudgetExceeded("本次运行的外部 LLM 调用预算已耗尽")
         provider_limit = self.provider_call_limits.get(provider_name)
-        if (
-            provider_limit is not None
-            and self.provider_used_calls(provider_name) >= provider_limit
-        ):
-            raise ExternalLLMBudgetExceeded(
-                f"{provider_name} 的本次运行调用上限已耗尽"
-            )
+        if provider_limit is not None and self.provider_used_calls(provider_name) >= provider_limit:
+            raise ExternalLLMBudgetExceeded(f"{provider_name} 的本次运行调用上限已耗尽")
         projected = self.committed_cost_cny + max_possible_cost_cny
         if self.max_cost_cny is not None and projected > self.max_cost_cny + 1e-12:
-            raise ExternalLLMBudgetExceeded(
-                "本次运行的人民币成本硬上限不足以覆盖本次请求"
-            )
+            raise ExternalLLMBudgetExceeded("本次运行的人民币成本硬上限不足以覆盖本次请求")
         self.used_calls += 1
-        self._provider_used_calls[provider_name] = (
-            self.provider_used_calls(provider_name) + 1
-        )
+        self._provider_used_calls[provider_name] = self.provider_used_calls(provider_name) + 1
         reservation_id = self._next_reservation_id
         self._next_reservation_id += 1
         self._reservations[reservation_id] = max_possible_cost_cny
@@ -116,13 +104,8 @@ class CallBudget:
         reserved = self._reservations.pop(reservation_id)
         self.used_cost_cny += actual_cost_cny
         if actual_cost_cny > reserved + 1e-12:
-            raise ExternalLLMBudgetExceeded(
-                "服务端报告成本超过请求前保守预留，已停止后续调用"
-            )
-        if (
-            self.max_cost_cny is not None
-            and self.committed_cost_cny > self.max_cost_cny + 1e-12
-        ):
+            raise ExternalLLMBudgetExceeded("服务端报告成本超过请求前保守预留，已停止后续调用")
+        if self.max_cost_cny is not None and self.committed_cost_cny > self.max_cost_cny + 1e-12:
             raise ExternalLLMBudgetExceeded("本次运行的人民币成本硬上限已超出")
 
 
@@ -138,16 +121,13 @@ class StructuredCallResult(BaseModel, Generic[T]):
     cost_status: str = "NOT_COMPUTED"
 
 
-def estimate_token_cost_cny(
-    runtime: ProviderRuntime, *, input_tokens: int, output_tokens: int
-) -> float:
+def estimate_token_cost_cny(runtime: ProviderRuntime, *, input_tokens: int, output_tokens: int) -> float:
     """依据冻结在 provider 配置中的保守单价估算人民币成本。"""
 
     if input_tokens < 0 or output_tokens < 0:
         raise ValueError("token 数不得为负")
     return (
-        input_tokens * runtime.input_cny_per_million_tokens
-        + output_tokens * runtime.output_cny_per_million_tokens
+        input_tokens * runtime.input_cny_per_million_tokens + output_tokens * runtime.output_cny_per_million_tokens
     ) / 1_000_000.0
 
 
@@ -186,9 +166,7 @@ def call_structured(
         raise ExternalLLMCallsDisabled("真实调用配置不完整，未发起网络请求")
     request_payload = _adapter(runtime).build_payload(runtime, task)
     # UTF-8 字节数是不依赖供应商 tokenizer 的保守输入 token 上界。
-    conservative_input_tokens = len(
-        json.dumps(request_payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
-    )
+    conservative_input_tokens = len(json.dumps(request_payload, ensure_ascii=False, sort_keys=True).encode("utf-8"))
     reserved_cost_cny = estimate_token_cost_cny(
         runtime,
         input_tokens=conservative_input_tokens,
@@ -220,9 +198,7 @@ def call_structured(
         raise ExternalLLMResponseError("响应 usage token 计数无效") from exc
     if input_tokens < 0 or output_tokens < 0:
         raise ExternalLLMResponseError("响应 usage token 计数不得为负")
-    usage_reported = bool(usage) and (
-        "prompt_tokens" in usage or "completion_tokens" in usage
-    )
+    usage_reported = bool(usage) and ("prompt_tokens" in usage or "completion_tokens" in usage)
     if usage_reported:
         estimated_cost_cny = estimate_token_cost_cny(
             runtime,

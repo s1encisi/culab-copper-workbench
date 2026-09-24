@@ -6,10 +6,11 @@ import hashlib
 import json
 import math
 import sqlite3
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
-from typing import Any, Mapping, TypedDict
+from typing import Any, TypedDict
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
@@ -52,9 +53,7 @@ class GraphState(TypedDict, total=False):
     idempotent_replay: bool
 
 
-def persistence_predictor(
-    feature_row: Mapping[str, Any], process_mode: ProcessModeCardV2
-) -> NumericPrediction:
+def persistence_predictor(feature_row: Mapping[str, Any], process_mode: ProcessModeCardV2) -> NumericPrediction:
     """与 V1 冻结 Persistence 相同的本地数值公式。"""
 
     del process_mode
@@ -64,9 +63,7 @@ def persistence_predictor(
     )
 
 
-def _fingerprint(
-    *, plan: WorkflowPlanV1, request: ForecastRequestV2, feature_row: Mapping[str, Any]
-) -> str:
+def _fingerprint(*, plan: WorkflowPlanV1, request: ForecastRequestV2, feature_row: Mapping[str, Any]) -> str:
     payload = {
         "plan": plan.model_dump(mode="json"),
         "request": request.model_dump(mode="json"),
@@ -156,30 +153,22 @@ def _route(state: GraphState) -> str:
 
 def _build_graph(*, predict: PredictFunction, checkpointer: SqliteSaver):
     def a1(state: GraphState) -> dict[str, Any]:
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         started_perf = perf_counter()
         try:
             plan = WorkflowPlanV1.model_validate(state["plan"])
             request = ForecastRequestV2.model_validate(state["request"])
             if plan.run_id != state["plan"]["run_id"]:
                 raise ValueError("run_id 不一致")
-            assert_no_future_information(
-                request, decision_at=request.admission.decision_at
-            )
-            assert_no_future_information(
-                state["feature_row"], decision_at=request.admission.decision_at
-            )
+            assert_no_future_information(request, decision_at=request.admission.decision_at)
+            assert_no_future_information(state["feature_row"], decision_at=request.admission.decision_at)
             records = _append_record(
                 state,
                 agent_id="A1",
                 engine="DETERMINISTIC",
                 started_at=started_at,
                 started_perf=started_perf,
-                status=(
-                    "WARNING"
-                    if request.admission.admission_status == "WARNING"
-                    else "PASSED"
-                ),
+                status=("WARNING" if request.admission.admission_status == "WARNING" else "PASSED"),
                 reason_codes=request.admission.reason_codes,
             )
             return {
@@ -198,7 +187,7 @@ def _build_graph(*, predict: PredictFunction, checkpointer: SqliteSaver):
             )
 
     def a2(state: GraphState) -> dict[str, Any]:
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         started_perf = perf_counter()
         try:
             request = ForecastRequestV2.model_validate(state["request"])
@@ -233,7 +222,7 @@ def _build_graph(*, predict: PredictFunction, checkpointer: SqliteSaver):
             )
 
     def a4(state: GraphState) -> dict[str, Any]:
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         started_perf = perf_counter()
         try:
             plan = WorkflowPlanV1.model_validate(state["plan"])
@@ -274,7 +263,7 @@ def _build_graph(*, predict: PredictFunction, checkpointer: SqliteSaver):
             )
 
     def a5(state: GraphState) -> dict[str, Any]:
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         started_perf = perf_counter()
         try:
             plan = WorkflowPlanV1.model_validate(state["plan"])
@@ -339,10 +328,7 @@ def _build_graph(*, predict: PredictFunction, checkpointer: SqliteSaver):
             failure_codes=(failure["code"],),
             evidence_refs=(),
         )
-        records = tuple(
-            AgentExecutionRecordV1.model_validate(item)
-            for item in state.get("records", [])
-        )
+        records = tuple(AgentExecutionRecordV1.model_validate(item) for item in state.get("records", []))
         ledger = ResourceLedgerV1.from_records(plan.run_id, records)
         return {
             "prediction": None,
@@ -360,18 +346,10 @@ def _build_graph(*, predict: PredictFunction, checkpointer: SqliteSaver):
     builder.add_node("A5", a5)
     builder.add_node("FAIL_CLOSED", fail_closed)
     builder.add_edge(START, "A1")
-    builder.add_conditional_edges(
-        "A1", _route, {"continue": "A2", "fail": "FAIL_CLOSED"}
-    )
-    builder.add_conditional_edges(
-        "A2", _route, {"continue": "A4", "fail": "FAIL_CLOSED"}
-    )
-    builder.add_conditional_edges(
-        "A4", _route, {"continue": "A5", "fail": "FAIL_CLOSED"}
-    )
-    builder.add_conditional_edges(
-        "A5", _route, {"continue": END, "fail": "FAIL_CLOSED"}
-    )
+    builder.add_conditional_edges("A1", _route, {"continue": "A2", "fail": "FAIL_CLOSED"})
+    builder.add_conditional_edges("A2", _route, {"continue": "A4", "fail": "FAIL_CLOSED"})
+    builder.add_conditional_edges("A4", _route, {"continue": "A5", "fail": "FAIL_CLOSED"})
+    builder.add_conditional_edges("A5", _route, {"continue": END, "fail": "FAIL_CLOSED"})
     builder.add_edge("FAIL_CLOSED", END)
     return builder.compile(checkpointer=checkpointer)
 
@@ -382,9 +360,7 @@ class LangGraphRunner:
     def __init__(self, *, checkpoint_path: str | Path, predict: PredictFunction):
         self.checkpoint_path = Path(checkpoint_path).resolve()
         self.checkpoint_path.parent.mkdir(parents=True, exist_ok=True)
-        self._connection = sqlite3.connect(
-            self.checkpoint_path, check_same_thread=False
-        )
+        self._connection = sqlite3.connect(self.checkpoint_path, check_same_thread=False)
         self._checkpointer = SqliteSaver(self._connection)
         self._checkpointer.setup()
         self.graph = _build_graph(predict=predict, checkpointer=self._checkpointer)
@@ -392,7 +368,7 @@ class LangGraphRunner:
     def close(self) -> None:
         self._connection.close()
 
-    def __enter__(self) -> "LangGraphRunner":
+    def __enter__(self) -> LangGraphRunner:
         return self
 
     def __exit__(self, *_: object) -> None:
@@ -412,16 +388,12 @@ class LangGraphRunner:
         request: ForecastRequestV2,
         feature_row: Mapping[str, Any],
     ) -> GraphState:
-        fingerprint = _fingerprint(
-            plan=plan, request=request, feature_row=feature_row
-        )
+        fingerprint = _fingerprint(plan=plan, request=request, feature_row=feature_row)
         config = self._config(plan.run_id)
         existing = dict(self.graph.get_state(config).values or {})
         if existing:
             if existing.get("input_fingerprint") != fingerprint:
-                raise RunIdConflictError(
-                    "相同 run_id 已绑定不同输入；为防止重复副作用，已拒绝运行"
-                )
+                raise RunIdConflictError("相同 run_id 已绑定不同输入；为防止重复副作用，已拒绝运行")
             if existing.get("completed") is True:
                 existing["idempotent_replay"] = True
                 return existing  # type: ignore[return-value]

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import httpx
 import numpy as np
@@ -20,7 +20,9 @@ from copper_mvp.storage import RunStore
 
 class SmallData:
     """Hand-checkable local process fixture; never used as real plant evidence."""
+
     dataset_version = "test-data"
+
     def row(self, _):
         return {"stage3_voltage_v__t_minus_0h": 10, "stage4_voltage_v__t_minus_0h": 20}
 
@@ -43,9 +45,33 @@ class SmallModels:
 
 
 def make_source(store):
-    request = RunRequest(task_type="optimize", request_key="source", event_id="local-event", bundle_id="a" * 32).model_dump()
+    request = RunRequest(
+        task_type="optimize", request_key="source", event_id="local-event", bundle_id="a" * 32
+    ).model_dump()
     source, _ = store.create(request, "source-fingerprint")
-    result = {"kind": "optimization", "mode": "plant", "event_id": "local-event", "bundle_id": "a" * 32, "fold_id": "FOLD_1", "model_scope": "oof_replay", "models": {"cu": "DeltaHGB", "as": "DeltaHGB"}, "supported_stages": [3, 4], "reference": {"f1": 5.0, "f2": 3.0, "as": 100.0, "variables": {"stage3_current_a": 100.0, "stage4_current_a": 100.0}}, "ranges": [{"stage": s, "lower": 90.0, "upper": 110.0, "varies": True, "historical_n": 100} for s in (3, 4)], "total_front_points": 1, "search_evaluations": 64, "feasible_evaluations": 32, "feasible_rate": .5, "stop_reason": "evaluation_budget", "audit": {"passed": True}}
+    result = {
+        "kind": "optimization",
+        "mode": "plant",
+        "event_id": "local-event",
+        "bundle_id": "a" * 32,
+        "fold_id": "FOLD_1",
+        "model_scope": "oof_replay",
+        "models": {"cu": "DeltaHGB", "as": "DeltaHGB"},
+        "supported_stages": [3, 4],
+        "reference": {
+            "f1": 5.0,
+            "f2": 3.0,
+            "as": 100.0,
+            "variables": {"stage3_current_a": 100.0, "stage4_current_a": 100.0},
+        },
+        "ranges": [{"stage": s, "lower": 90.0, "upper": 110.0, "varies": True, "historical_n": 100} for s in (3, 4)],
+        "total_front_points": 1,
+        "search_evaluations": 64,
+        "feasible_evaluations": 32,
+        "feasible_rate": 0.5,
+        "stop_reason": "evaluation_budget",
+        "audit": {"passed": True},
+    }
     store.finish(source["run_id"], result, 1)
     return store.get(source["run_id"])
 
@@ -71,7 +97,7 @@ def test_probe_constraint_counts_and_plateau_have_hand_calculated_answer(source)
     assert response["cu_constant_in_probe"] is True
     assert response["as_constant_in_probe"] is False
     assert response["all_points"]["as_span_mg_l"] == 20
-    assert response["power_span_kw"] == pytest.approx(.6)
+    assert response["power_span_kw"] == pytest.approx(0.6)
     assert response["objective_alignment_in_feasible_probe"]["minimum_power_point_also_minimizes_cu"] is True
     assert tools.inspect_run()["original_rejection_breakdown_available"] is False
 
@@ -80,13 +106,14 @@ def test_single_axis_probe_does_not_change_other_current(source):
     tools = DiagnosticTools(source, SmallData(), SmallModels())
     response = tools.probe_response(9, "stage3")
     assert response["as_constant_in_probe"] is True
-    assert response["power_span_kw"] == pytest.approx(.2)
+    assert response["power_span_kw"] == pytest.approx(0.2)
 
 
 def test_response_reports_tradeoff_when_quality_and_power_oppose(source):
     class OpposedModels(SmallModels):
         def predict_matrix(self, resolved, matrix):
-            return np.column_stack((5 - (matrix[:, 0] - 100)*.01, matrix[:, 1]))
+            return np.column_stack((5 - (matrix[:, 0] - 100) * 0.01, matrix[:, 1]))
+
     tools = DiagnosticTools(source, SmallData(), OpposedModels())
     result = tools.probe_response(9, "stage3")
     assert result["probe_front_points"] == 9
@@ -107,11 +134,19 @@ def test_fixed_range_and_reference_mismatch(source):
 
 
 def call(name, arguments):
-    return {"id": "call_" + name, "type": "function", "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)}}
+    return {
+        "id": "call_" + name,
+        "type": "function",
+        "function": {"name": name, "arguments": json.dumps(arguments, ensure_ascii=False)},
+    }
 
 
 def report(evidence="E2"):
-    return {"summary": "有限探测中Cu模型响应保持不变，功率随电流变化；尚不能据此推断现场因果作用。", "findings": [{"claim": "本次探测出现Cu模型响应平台。", "status": "supported", "evidence_ids": [evidence]}], "next_checks": ["refine_original_grid"]}
+    return {
+        "summary": "有限探测中Cu模型响应保持不变，功率随电流变化；尚不能据此推断现场因果作用。",
+        "findings": [{"claim": "本次探测出现Cu模型响应平台。", "status": "supported", "evidence_ids": [evidence]}],
+        "next_checks": ["refine_original_grid"],
+    }
 
 
 class ScriptedProvider:
@@ -125,21 +160,47 @@ class ScriptedProvider:
         self.payloads.append(payload)
         self.timeouts.append(request.extensions.get("timeout", {}))
         calls = self.script[len(self.payloads) - 1]
-        return httpx.Response(200, json={"model": "deepseek-v4-flash", "choices": [{"finish_reason": "tool_calls", "message": {"role": "assistant", "content": None, "reasoning_content": "provider-only-test-reasoning", "tool_calls": calls}}], "usage": {"prompt_tokens": 1000, "completion_tokens": 100, "prompt_cache_hit_tokens": 400}})
+        return httpx.Response(
+            200,
+            json={
+                "model": "deepseek-v4-flash",
+                "choices": [
+                    {
+                        "finish_reason": "tool_calls",
+                        "message": {
+                            "role": "assistant",
+                            "content": None,
+                            "reasoning_content": "provider-only-test-reasoning",
+                            "tool_calls": calls,
+                        },
+                    }
+                ],
+                "usage": {"prompt_tokens": 1000, "completion_tokens": 100, "prompt_cache_hit_tokens": 400},
+            },
+        )
 
 
 def run_agent(store, source, monkeypatch, script, settings=None):
     monkeypatch.setattr("copper_mvp.diagnostic_agent.read_deepseek_key", lambda: SecretStr("test-secret-never-log"))
     provider = ScriptedProvider(script)
     agent = DiagnosticAgentService(store, SmallData(), SmallModels(), settings, httpx.MockTransport(provider))
-    request = {"request_key": "diagnose", "task_type": "agent_diagnostic", "source_run_id": source["run_id"], "question": "why_few_candidates"}
+    request = {
+        "request_key": "diagnose",
+        "task_type": "agent_diagnostic",
+        "source_run_id": source["run_id"],
+        "question": "why_few_candidates",
+    }
     job, _ = store.create(request, digest(request))
     agent.execute(job["run_id"])
     return store.get(job["run_id"]), provider
 
 
 def basic_script():
-    return [[call("inspect_run", {"purpose": "确认原搜索范围和可行率"})], [call("probe_response", {"purpose": "检验模型是否出现平台", "points_per_axis": 9, "axis": "joint"})], [call("finish_diagnosis", report())]]
+    return [
+        [call("inspect_run", {"purpose": "确认原搜索范围和可行率"})],
+        [call("probe_response", {"purpose": "检验模型是否出现平台", "points_per_axis": 9, "axis": "joint"})],
+        [call("finish_diagnosis", report())],
+    ]
 
 
 def test_real_loop_returns_tool_feedback_preserves_protocol_and_excludes_secrets(store, source, monkeypatch):
@@ -162,7 +223,14 @@ def test_real_loop_returns_tool_feedback_preserves_protocol_and_excludes_secrets
     assert "test-secret-never-log" not in persisted
     assert "provider-only-test-reasoning" not in persisted
     outbound = json.dumps(provider.payloads)
-    for forbidden in ("local-event", "stage3_current_a", "stage4_current_a", source["run_id"], "DEEPSEEK_API_KEY", "target_cu_g_l"):
+    for forbidden in (
+        "local-event",
+        "stage3_current_a",
+        "stage4_current_a",
+        source["run_id"],
+        "DEEPSEEK_API_KEY",
+        "target_cu_g_l",
+    ):
         assert forbidden not in outbound
     assert store.get(source["run_id"])["result"] == source["result"]
 
@@ -185,7 +253,9 @@ def test_followup_checks_stay_in_diagnostic_scope():
 
 def test_tool_parameter_feedback_identifies_field_without_echoing_input(store, source, monkeypatch):
     script = basic_script()
-    script.insert(1, [call("probe_response", {"purpose": "检查响应", "axis": "bad-untrusted-input", "points_per_axis": 9})])
+    script.insert(
+        1, [call("probe_response", {"purpose": "检查响应", "axis": "bad-untrusted-input", "points_per_axis": 9})]
+    )
     result, provider = run_agent(store, source, monkeypatch, script)
     assert result["status"] == "completed"
     feedback = json.loads(provider.payloads[2]["messages"][-1]["content"])
@@ -225,11 +295,21 @@ def test_limit_does_not_masquerade_as_success(store, source, monkeypatch):
 def test_http_failure_keeps_unknown_charge_and_does_not_retry(store, source, monkeypatch):
     monkeypatch.setattr("copper_mvp.diagnostic_agent.read_deepseek_key", lambda: SecretStr("test-secret-never-log"))
     attempts = []
+
     def reject(request):
         attempts.append(1)
         return httpx.Response(401, json={"error": "test-secret-never-log"})
+
     agent = DiagnosticAgentService(store, SmallData(), SmallModels(), transport=httpx.MockTransport(reject))
-    job, _ = store.create({"request_key": "failure", "task_type": "agent_diagnostic", "source_run_id": source["run_id"], "question": "why_few_candidates"}, "failure")
+    job, _ = store.create(
+        {
+            "request_key": "failure",
+            "task_type": "agent_diagnostic",
+            "source_run_id": source["run_id"],
+            "question": "why_few_candidates",
+        },
+        "failure",
+    )
     agent.execute(job["run_id"])
     result = store.get(job["run_id"])
     assert result["status"] == "failed" and len(attempts) == 1
@@ -240,18 +320,18 @@ def test_http_failure_keeps_unknown_charge_and_does_not_retry(store, source, mon
 def test_price_estimate_cache_split_and_time_period():
     pricing = AgentSettings.load().pricing
     usage = {"prompt_tokens": 1000, "completion_tokens": 200, "prompt_cache_hit_tokens": 400}
-    peak = estimate_usage(usage, pricing, datetime(2026, 9, 7, 2, tzinfo=timezone.utc))
-    offpeak = estimate_usage(usage, pricing, datetime(2026, 9, 6, 2, tzinfo=timezone.utc))
-    assert peak["estimated_cost_cny"] == pytest.approx((400*.1 + 600*3 + 200*9)/1e6)
-    assert offpeak["estimated_cost_cny"] == pytest.approx(peak["estimated_cost_cny"]*.5)
+    peak = estimate_usage(usage, pricing, datetime(2026, 9, 7, 2, tzinfo=UTC))
+    offpeak = estimate_usage(usage, pricing, datetime(2026, 9, 6, 2, tzinfo=UTC))
+    assert peak["estimated_cost_cny"] == pytest.approx((400 * 0.1 + 600 * 3 + 200 * 9) / 1e6)
+    assert offpeak["estimated_cost_cny"] == pytest.approx(peak["estimated_cost_cny"] * 0.5)
     with pytest.raises(WorkbenchError):
-        estimate_usage({}, pricing, datetime.now(timezone.utc))
+        estimate_usage({}, pricing, datetime.now(UTC))
 
 
 @pytest.mark.parametrize("limit", ["run", "month"])
 def test_budget_rejection_happens_before_network(store, source, monkeypatch, limit):
     setting = "max_cost_cny" if limit == "run" else "monthly_limit_cny"
-    settings = AgentSettings.load().model_copy(update={setting: .000001})
+    settings = AgentSettings.load().model_copy(update={setting: 0.000001})
     result, provider = run_agent(store, source, monkeypatch, [], settings)
     assert result["status"] == "failed"
     assert len(provider.payloads) == 0
@@ -261,14 +341,18 @@ def test_budget_rejection_happens_before_network(store, source, monkeypatch, lim
 
 def test_dotenv_key_is_selective_and_does_not_mutate_environment(tmp_path, monkeypatch):
     from copper_mvp.diagnostic_agent import read_deepseek_key
+
     monkeypatch.setattr("copper_mvp.diagnostic_agent.PROJECT_ROOT", tmp_path / "project")
     monkeypatch.setattr("copper_mvp.diagnostic_agent.WORKSPACE_ROOT", tmp_path)
     monkeypatch.delenv("DEEPSEEK_API_KEY", raising=False)
     monkeypatch.setenv("UNRELATED_TEST_TOKEN", "unchanged")
-    (tmp_path / ".env").write_text('UNRELATED_TEST_TOKEN=replace\nDEEPSEEK_API_KEY="test-local-key"\n', encoding="utf-8")
+    (tmp_path / ".env").write_text(
+        'UNRELATED_TEST_TOKEN=replace\nDEEPSEEK_API_KEY="test-local-key"\n', encoding="utf-8"
+    )
     key = read_deepseek_key()
     assert key.get_secret_value() == "test-local-key"
     import os
+
     assert os.environ["UNRELATED_TEST_TOKEN"] == "unchanged"
     assert "DEEPSEEK_API_KEY" not in os.environ
     assert "test-local-key" not in repr(key)

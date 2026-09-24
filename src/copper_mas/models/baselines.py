@@ -12,15 +12,16 @@ import json
 import platform
 import sys
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
+import joblib
 import numpy as np
 import pandas as pd
 import sklearn
-import joblib
 from sklearn.dummy import DummyRegressor
 from sklearn.ensemble import ExtraTreesRegressor
 from sklearn.impute import SimpleImputer
@@ -28,7 +29,6 @@ from sklearn.linear_model import Ridge
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
-
 
 RUN_ID = "P2_BASELINES_V1_2024_2025"
 DEVELOPMENT_YEARS = frozenset({2024, 2025})
@@ -163,11 +163,7 @@ def validate_feature_columns(columns: Iterable[str]) -> tuple[str, ...]:
     if len(set(ordered)) != len(ordered):
         duplicates = pd.Index(ordered)[pd.Index(ordered).duplicated()].unique().tolist()
         raise ValueError(f"X 特征列名不唯一: {duplicates[:5]}")
-    forbidden = {
-        column: reason
-        for column in ordered
-        if (reason := _forbidden_feature_reason(column)) is not None
-    }
+    forbidden = {column: reason for column in ordered if (reason := _forbidden_feature_reason(column)) is not None}
     if forbidden:
         raise ValueError(f"X 检出禁止的未来/目标字段: {forbidden}")
     return ordered
@@ -182,9 +178,7 @@ def _validate_development_dates(values: pd.Series, *, column: str) -> pd.Series:
     years = set(parsed.dt.year.astype(int))
     unexpected = sorted(years - DEVELOPMENT_YEARS)
     if unexpected:
-        raise ValueError(
-            f"P2 只允许 2024—2025 开发期数据；{column} 检出年份 {unexpected}，已停止。"
-        )
+        raise ValueError(f"P2 只允许 2024—2025 开发期数据；{column} 检出年份 {unexpected}，已停止。")
     return parsed
 
 
@@ -219,15 +213,9 @@ def validate_temporal_fold_manifest(
     if set(checked["preprocessing_fit_scope"].astype(str)) != {"TRAIN_FOLD_ONLY"}:
         raise ValueError("预处理拟合范围必须全部为 TRAIN_FOLD_ONLY")
 
-    checked["decision_at"] = _validate_development_dates(
-        checked["decision_at"], column="cv_fold_manifest.decision_at"
-    )
-    checked["fold_fit_cutoff_at"] = pd.to_datetime(
-        checked["fold_fit_cutoff_at"], errors="coerce", format="mixed"
-    )
-    checked["validation_end_at"] = pd.to_datetime(
-        checked["validation_end_at"], errors="coerce", format="mixed"
-    )
+    checked["decision_at"] = _validate_development_dates(checked["decision_at"], column="cv_fold_manifest.decision_at")
+    checked["fold_fit_cutoff_at"] = pd.to_datetime(checked["fold_fit_cutoff_at"], errors="coerce", format="mixed")
+    checked["validation_end_at"] = pd.to_datetime(checked["validation_end_at"], errors="coerce", format="mixed")
     if checked[["fold_fit_cutoff_at", "validation_end_at"]].isna().any().any():
         raise ValueError("折拟合截止或验证截止时间无法解析")
 
@@ -295,8 +283,7 @@ def prepare_p2_data(input_dir: Path) -> PreparedP2Data:
     _require_columns(core, CORE_METADATA_COLUMNS, source=INPUT_FILENAMES["features"])
     _require_columns(
         index,
-        {"pair_id", "origin_event_id", "origin_recorded_at", "origin_year",
-         "tier1_core_primary_prospective"},
+        {"pair_id", "origin_event_id", "origin_recorded_at", "origin_year", "tier1_core_primary_prospective"},
         source=INPUT_FILENAMES["index"],
     )
     _require_columns(
@@ -312,9 +299,7 @@ def prepare_p2_data(input_dir: Path) -> PreparedP2Data:
     if outcomes["pair_id"].duplicated().any():
         raise ValueError("真值账本 pair_id 不唯一")
 
-    core["decision_at"] = _validate_development_dates(
-        core["decision_at"], column="core_feature_matrix.decision_at"
-    )
+    core["decision_at"] = _validate_development_dates(core["decision_at"], column="core_feature_matrix.decision_at")
     index["origin_recorded_at"] = _validate_development_dates(
         index["origin_recorded_at"], column="training_index.origin_recorded_at"
     )
@@ -329,9 +314,7 @@ def prepare_p2_data(input_dir: Path) -> PreparedP2Data:
         index["tier1_core_primary_prospective"],
         column="tier1_core_primary_prospective",
     )
-    selected_index = index.loc[
-        eligibility, ["pair_id", "origin_event_id", "origin_recorded_at"]
-    ].copy()
+    selected_index = index.loc[eligibility, ["pair_id", "origin_event_id", "origin_recorded_at"]].copy()
     if selected_index.empty:
         raise ValueError("tier1_core_primary_prospective 主样本为空")
 
@@ -365,9 +348,7 @@ def prepare_p2_data(input_dir: Path) -> PreparedP2Data:
     if joined[list(TARGET_COLUMNS)].isna().any().any():
         raise ValueError("主样本 Cu/As 真值不完整")
 
-    feature_columns = validate_feature_columns(
-        column for column in core.columns if column not in CORE_METADATA_COLUMNS
-    )
+    feature_columns = validate_feature_columns(column for column in core.columns if column not in CORE_METADATA_COLUMNS)
     absent_persistence = sorted(set(PERSISTENCE_COLUMNS.values()) - set(feature_columns))
     if absent_persistence:
         raise ValueError(f"持续性基线缺少当前结果字段: {absent_persistence}")
@@ -386,9 +367,7 @@ def prepare_p2_data(input_dir: Path) -> PreparedP2Data:
         raise ValueError("主样本当前 Cu/As 缺失，无法计算 persistence")
 
     selected_pairs = set(selected_index["pair_id"].astype(str))
-    selected_folds = fold_manifest.loc[
-        fold_manifest["pair_id"].astype(str).isin(selected_pairs)
-    ].copy()
+    selected_folds = fold_manifest.loc[fold_manifest["pair_id"].astype(str).isin(selected_pairs)].copy()
     covered_pairs = set(selected_folds["pair_id"].astype(str))
     if not selected_pairs.issubset(covered_pairs):
         missing_pairs = sorted(selected_pairs - covered_pairs)
@@ -510,9 +489,7 @@ def _write_candidate_bundle(
                 }
             )
 
-    feature_payload = json.dumps(
-        list(data.feature_columns), ensure_ascii=False, separators=(",", ":")
-    )
+    feature_payload = json.dumps(list(data.feature_columns), ensure_ascii=False, separators=(",", ":"))
     bundle_manifest: dict[str, Any] = {
         "bundle_id": "A4_P2_FROZEN_CANDIDATES_V1_2024_2025",
         "bundle_status": "FROZEN_DEVELOPMENT_CANDIDATES_NO_WINNER",
@@ -522,10 +499,7 @@ def _write_candidate_bundle(
         "selection": {
             "selected_model": None,
             "default_model": None,
-            "instruction": (
-                "A4 必须显式传入 model_name 与 target_name；本包不把开发期单折最好结果"
-                "解释为最终胜者。"
-            ),
+            "instruction": ("A4 必须显式传入 model_name 与 target_name；本包不把开发期单折最好结果解释为最终胜者。"),
         },
         "features": {
             "ordered_names": list(data.feature_columns),
@@ -637,6 +611,48 @@ def _model_config_payload(
             ],
         },
     }
+    if include_nonlinear:
+        models["ExtraTreesLite"] = {
+            "pipeline": [
+                "SimpleImputer(strategy='median', keep_empty_features=True)",
+                "ExtraTreesRegressor(n_estimators=64, max_depth=10, min_samples_leaf=8, max_features=0.30, n_jobs=1)",
+            ],
+            "random_state": int(random_state),
+        }
+    return {
+        "run_id": RUN_ID,
+        "sample": "tier1_core_primary_prospective",
+        "development_years": [2024, 2025],
+        "external_2026_used": False,
+        "targets": list(TARGET_COLUMNS),
+        "feature_count": int(feature_count),
+        "feature_policy": {
+            "source": INPUT_FILENAMES["features"],
+            "known_at_decision_only": True,
+            "forbidden_prefixes": ["target_", "next_", "lead_", "lead_to_"],
+            "origin_current_cu_as_included": True,
+        },
+        "cross_validation": {
+            "source": INPUT_FILENAMES["folds"],
+            "fold_count": EXPECTED_FOLDS,
+            "scheme": "frozen expanding-window roles",
+            "preprocessing_fit_scope": "TRAIN_FOLD_ONLY",
+            "random_split": False,
+        },
+        "selection": {
+            "performed": False,
+            "statement": "仅并列报告预先指定基线，不按单折或单次最好结果选择模型。",
+        },
+        "metrics": [
+            "MAE",
+            "RMSE",
+            "R2",
+            "relative MAE/RMSE improvement vs Persistence",
+            "R2 delta vs Persistence",
+        ],
+        "fold_dispersion": "sample standard deviation (ddof=1)",
+        "models": models,
+    }
 
 
 def _fmt_metric(value: Any, digits: int = 4) -> str:
@@ -654,9 +670,7 @@ def _render_human_report(
     include_nonlinear: bool,
 ) -> str:
     base_signals = [
-        feature.removesuffix("__t_minus_0h")
-        for feature in data.feature_columns
-        if feature.endswith("__t_minus_0h")
+        feature.removesuffix("__t_minus_0h") for feature in data.feature_columns if feature.endswith("__t_minus_0h")
     ]
     fold_ids = sorted(data.folds["fold_id"].unique(), key=_natural_fold_key)
     lines = [
@@ -719,16 +733,9 @@ def _render_human_report(
         ]
     )
     for fold_id in fold_ids:
-        train_n = len(
-            data.folds.loc[
-                (data.folds["fold_id"] == fold_id) & (data.folds["fold_role"] == "TRAIN")
-            ]
-        )
+        train_n = len(data.folds.loc[(data.folds["fold_id"] == fold_id) & (data.folds["fold_role"] == "TRAIN")])
         validation_n = len(
-            data.folds.loc[
-                (data.folds["fold_id"] == fold_id)
-                & (data.folds["fold_role"] == "VALIDATION")
-            ]
+            data.folds.loc[(data.folds["fold_id"] == fold_id) & (data.folds["fold_role"] == "VALIDATION")]
         )
         lines.append(f"| {fold_id} | {train_n} | {validation_n} | 训练严格早于验证 |")
     lines.extend(
@@ -756,12 +763,8 @@ def _render_human_report(
                 mae=_fmt_metric(row["pooled_mae"], unit_digits),
                 rmse=_fmt_metric(row["pooled_rmse"], unit_digits),
                 r2=_fmt_metric(row["pooled_r2"], 4),
-                mae_imp=_fmt_metric(
-                    row["pooled_relative_mae_improvement_vs_persistence_pct"], 2
-                ),
-                rmse_imp=_fmt_metric(
-                    row["pooled_relative_rmse_improvement_vs_persistence_pct"], 2
-                ),
+                mae_imp=_fmt_metric(row["pooled_relative_mae_improvement_vs_persistence_pct"], 2),
+                rmse_imp=_fmt_metric(row["pooled_relative_rmse_improvement_vs_persistence_pct"], 2),
             )
         )
     lines.extend(
@@ -775,9 +778,9 @@ def _render_human_report(
             "|---|---|---|---:|---:|---:|---:|---:|---:|",
         ]
     )
-    detailed = fold_metrics.loc[
-        fold_metrics["model_name"].isin(["Persistence", "Ridge"])
-    ].sort_values(["target_name", "model_name", "fold_id"], kind="mergesort")
+    detailed = fold_metrics.loc[fold_metrics["model_name"].isin(["Persistence", "Ridge"])].sort_values(
+        ["target_name", "model_name", "fold_id"], kind="mergesort"
+    )
     for _, row in detailed.iterrows():
         unit_digits = 3 if row["target_name"] == "target_as_mg_l" else 4
         lines.append(
@@ -834,49 +837,6 @@ def _render_human_report(
         ]
     )
     return "\n".join(lines)
-    if include_nonlinear:
-        models["ExtraTreesLite"] = {
-            "pipeline": [
-                "SimpleImputer(strategy='median', keep_empty_features=True)",
-                "ExtraTreesRegressor(n_estimators=64, max_depth=10, "
-                "min_samples_leaf=8, max_features=0.30, n_jobs=1)",
-            ],
-            "random_state": int(random_state),
-        }
-    return {
-        "run_id": RUN_ID,
-        "sample": "tier1_core_primary_prospective",
-        "development_years": [2024, 2025],
-        "external_2026_used": False,
-        "targets": list(TARGET_COLUMNS),
-        "feature_count": int(feature_count),
-        "feature_policy": {
-            "source": INPUT_FILENAMES["features"],
-            "known_at_decision_only": True,
-            "forbidden_prefixes": ["target_", "next_", "lead_", "lead_to_"],
-            "origin_current_cu_as_included": True,
-        },
-        "cross_validation": {
-            "source": INPUT_FILENAMES["folds"],
-            "fold_count": EXPECTED_FOLDS,
-            "scheme": "frozen expanding-window roles",
-            "preprocessing_fit_scope": "TRAIN_FOLD_ONLY",
-            "random_split": False,
-        },
-        "selection": {
-            "performed": False,
-            "statement": "仅并列报告预先指定基线，不按单折或单次最好结果选择模型。",
-        },
-        "metrics": [
-            "MAE",
-            "RMSE",
-            "R2",
-            "relative MAE/RMSE improvement vs Persistence",
-            "R2 delta vs Persistence",
-        ],
-        "fold_dispersion": "sample standard deviation (ddof=1)",
-        "models": models,
-    }
 
 
 def run_p2_baselines(
@@ -890,7 +850,7 @@ def run_p2_baselines(
     """运行冻结五折基线并写出逐样本预测、指标、配置与哈希清单。"""
 
     started_wall = time.perf_counter()
-    generated_at = datetime.now(timezone.utc)
+    generated_at = datetime.now(UTC)
     data = prepare_p2_data(input_dir)
     output_dir = Path(output_dir).resolve()
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -935,9 +895,7 @@ def run_p2_baselines(
                 predict_seconds = time.perf_counter() - predict_started
                 model_predictions[model_name] = (y_pred, fit_seconds, predict_seconds)
 
-            validation_meta = record_by_pair.loc[
-                validation_ids, ["origin_event_id", "decision_at"]
-            ].reset_index()
+            validation_meta = record_by_pair.loc[validation_ids, ["origin_event_id", "decision_at"]].reset_index()
             for model_name, (y_pred, fit_seconds, predict_seconds) in model_predictions.items():
                 current_metrics = _metrics(y_true, y_pred)
                 metric_rows.append(
@@ -987,21 +945,18 @@ def run_p2_baselines(
         ["target_name", "model_name", "fold_id", "decision_at", "pair_id"],
         kind="mergesort",
     ).reset_index(drop=True)
-    fold_metrics = pd.DataFrame(metric_rows).sort_values(
-        ["target_name", "model_name", "fold_id"], kind="mergesort"
-    ).reset_index(drop=True)
+    fold_metrics = (
+        pd.DataFrame(metric_rows)
+        .sort_values(["target_name", "model_name", "fold_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
 
     overall_rows: list[dict[str, Any]] = []
-    for (target_name, model_name), group in predictions.groupby(
-        ["target_name", "model_name"], sort=True
-    ):
+    for (target_name, model_name), group in predictions.groupby(["target_name", "model_name"], sort=True):
         pooled = _metrics(group["y_true"].to_numpy(), group["y_pred"].to_numpy())
-        persistence = _metrics(
-            group["y_true"].to_numpy(), group["persistence_prediction"].to_numpy()
-        )
+        persistence = _metrics(group["y_true"].to_numpy(), group["persistence_prediction"].to_numpy())
         per_fold = fold_metrics.loc[
-            (fold_metrics["target_name"] == target_name)
-            & (fold_metrics["model_name"] == model_name)
+            (fold_metrics["target_name"] == target_name) & (fold_metrics["model_name"] == model_name)
         ]
         row: dict[str, Any] = {
             "run_id": RUN_ID,
@@ -1036,9 +991,9 @@ def run_p2_baselines(
             row[f"fold_{metric}_mean"] = per_fold[metric].mean()
             row[f"fold_{metric}_std"] = per_fold[metric].std(ddof=1)
         overall_rows.append(row)
-    overall_metrics = pd.DataFrame(overall_rows).sort_values(
-        ["target_name", "model_name"], kind="mergesort"
-    ).reset_index(drop=True)
+    overall_metrics = (
+        pd.DataFrame(overall_rows).sort_values(["target_name", "model_name"], kind="mergesort").reset_index(drop=True)
+    )
 
     feature_manifest = pd.DataFrame(
         {
@@ -1067,18 +1022,10 @@ def run_p2_baselines(
         "model_config": output_dir / "model_config_v1.json",
         "human_report": output_dir / "P2基线结果说明_V1.md",
     }
-    predictions.to_csv(
-        artifact_paths["predictions"], index=False, encoding="utf-8-sig", float_format="%.10g"
-    )
-    fold_metrics.to_csv(
-        artifact_paths["fold_metrics"], index=False, encoding="utf-8-sig", float_format="%.10g"
-    )
-    overall_metrics.to_csv(
-        artifact_paths["overall_metrics"], index=False, encoding="utf-8-sig", float_format="%.10g"
-    )
-    feature_manifest.to_csv(
-        artifact_paths["feature_manifest"], index=False, encoding="utf-8-sig"
-    )
+    predictions.to_csv(artifact_paths["predictions"], index=False, encoding="utf-8-sig", float_format="%.10g")
+    fold_metrics.to_csv(artifact_paths["fold_metrics"], index=False, encoding="utf-8-sig", float_format="%.10g")
+    overall_metrics.to_csv(artifact_paths["overall_metrics"], index=False, encoding="utf-8-sig", float_format="%.10g")
+    feature_manifest.to_csv(artifact_paths["feature_manifest"], index=False, encoding="utf-8-sig")
     _write_json(artifact_paths["model_config"], model_config)
     artifact_paths["human_report"].write_text(
         _render_human_report(
@@ -1098,38 +1045,22 @@ def run_p2_baselines(
         include_nonlinear=include_nonlinear,
     )
 
-    source_hashes = {
-        INPUT_FILENAMES[key]: sha256_file(path) for key, path in data.source_paths.items()
-    }
+    source_hashes = {INPUT_FILENAMES[key]: sha256_file(path) for key, path in data.source_paths.items()}
     all_output_paths = [
         *artifact_paths.values(),
         bundle_manifest_path,
         *serialized_model_paths,
     ]
-    output_hashes = {
-        path.relative_to(output_dir).as_posix(): sha256_file(path) for path in all_output_paths
-    }
+    output_hashes = {path.relative_to(output_dir).as_posix(): sha256_file(path) for path in all_output_paths}
     duration = time.perf_counter() - started_wall
     validation_counts = {
         fold_id: int(
-            len(
-                data.folds.loc[
-                    (data.folds["fold_id"] == fold_id)
-                    & (data.folds["fold_role"] == "VALIDATION")
-                ]
-            )
+            len(data.folds.loc[(data.folds["fold_id"] == fold_id) & (data.folds["fold_role"] == "VALIDATION")])
         )
         for fold_id in fold_ids
     }
     train_counts = {
-        fold_id: int(
-            len(
-                data.folds.loc[
-                    (data.folds["fold_id"] == fold_id)
-                    & (data.folds["fold_role"] == "TRAIN")
-                ]
-            )
-        )
+        fold_id: int(len(data.folds.loc[(data.folds["fold_id"] == fold_id) & (data.folds["fold_role"] == "TRAIN")]))
         for fold_id in fold_ids
     }
     manifest: dict[str, Any] = {

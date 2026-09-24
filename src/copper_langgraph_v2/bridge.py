@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from copper_langgraph_v2.paths import PROJECT_ROOT
 
-
 # 保留旧名称供现有调用方兼容；V1 与 V2 现在位于同一正式工程根目录。
 V1_PROJECT_ROOT = PROJECT_ROOT
 
@@ -33,7 +32,6 @@ from copper_mas.contracts.runtime import (
     WorkflowPlanV1,
 )
 from copper_mas.data.leakage import assert_no_future_information
-
 
 __all__ = [
     "AgentExecutionRecordV1",

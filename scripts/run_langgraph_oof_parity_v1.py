@@ -9,13 +9,12 @@ import os
 import socket
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-
 
 os.environ["LANGSMITH_TRACING"] = "false"
 os.environ["LANGCHAIN_TRACING_V2"] = "false"
@@ -39,7 +38,6 @@ from copper_mas.evaluation.workflow_benchmark import (  # noqa: E402
     reconstruct_p2_oof_identity,
 )
 from copper_mas.models.predictors import load_selected_predictor  # noqa: E402
-
 
 EXPECTED_EVENTS = 2732
 
@@ -71,9 +69,7 @@ def _block_network():
 
 
 def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="验证 2024—2025 OOF 事件的 V1/LangGraph V2 语义一致性。"
-    )
+    parser = argparse.ArgumentParser(description="验证 2024—2025 OOF 事件的 V1/LangGraph V2 语义一致性。")
     parser.add_argument(
         "--max-events",
         type=int,
@@ -121,15 +117,9 @@ def main() -> int:
     for frame, name in ((features, "features"), (admissions, "admissions")):
         if frame["origin_event_id"].duplicated().any():
             raise ValueError(f"{name} origin_event_id 不唯一")
-    features["decision_at"] = pd.to_datetime(
-        features["decision_at"], errors="raise", format="mixed"
-    )
-    admissions["decision_at"] = pd.to_datetime(
-        admissions["decision_at"], errors="raise", format="mixed"
-    )
-    admissions["feature_cutoff_at"] = pd.to_datetime(
-        admissions["feature_cutoff_at"], errors="raise", format="mixed"
-    )
+    features["decision_at"] = pd.to_datetime(features["decision_at"], errors="raise", format="mixed")
+    admissions["decision_at"] = pd.to_datetime(admissions["decision_at"], errors="raise", format="mixed")
+    admissions["feature_cutoff_at"] = pd.to_datetime(admissions["feature_cutoff_at"], errors="raise", format="mixed")
 
     expected_source_hashes = p2_manifest.get("source_sha256") or {}
     for filename, key in (
@@ -172,9 +162,7 @@ def main() -> int:
                 origin_event_id = str(identity["origin_event_id"])
                 feature_series = feature_by_origin.loc[origin_event_id]
                 admission_series = admission_by_origin.loc[origin_event_id]
-                if isinstance(feature_series, pd.DataFrame) or isinstance(
-                    admission_series, pd.DataFrame
-                ):
+                if isinstance(feature_series, pd.DataFrame) or isinstance(admission_series, pd.DataFrame):
                     raise ValueError(f"起点 {origin_event_id} 输入不唯一")
                 feature_row = feature_series.to_dict()
                 admission = _make_admission(admission_series)
@@ -217,9 +205,7 @@ def main() -> int:
                     and actual["resources"]["total_output_tokens"] == 0
                     and actual["resources"]["total_estimated_cost_cny"] == 0
                 )
-                passed = all(
-                    (mode_match, prediction_match, audit_match, trace_match, resource_safe)
-                )
+                passed = all((mode_match, prediction_match, audit_match, trace_match, resource_safe))
                 rows.append(
                     {
                         "pair_id": pair_id,
@@ -248,7 +234,7 @@ def main() -> int:
     mismatch_count = int((~result_frame["passed"]).sum())
     manifest = {
         "run_id": "LANGGRAPH_V2_OOF_PARITY_V1",
-        "generated_at_utc": datetime.now(timezone.utc).isoformat(),
+        "generated_at_utc": datetime.now(UTC).isoformat(),
         "duration_seconds": time.perf_counter() - started,
         "development_years": [2024, 2025],
         "sample": "tier1_core_primary_prospective_unique_oof_validation_union",
@@ -287,9 +273,7 @@ def main() -> int:
             else "PASSED_PARTIAL_SAMPLEWISE_SEMANTIC_PARITY"
         )
     manifest_path = output_dir / "run_manifest_v1.json"
-    manifest_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    manifest_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     return 0 if manifest["status"].startswith("PASSED") else 1
 

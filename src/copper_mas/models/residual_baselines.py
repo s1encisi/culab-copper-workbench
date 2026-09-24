@@ -10,10 +10,11 @@ from __future__ import annotations
 import json
 import platform
 import time
+from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -36,7 +37,6 @@ from copper_mas.models.baselines import (
     prepare_p2_data,
     sha256_file,
 )
-
 
 RUN_ID = "P2_1_RESIDUAL_BASELINES_V1_2024_2025"
 MODEL_NAMES = (
@@ -130,20 +130,13 @@ def select_reduced_delta_features(
         raise ValueError(f"基础信号缺少约定的 12h 统计列: {incomplete}")
     base_signals = tuple(
         dict.fromkeys(
-            column.removesuffix(suffix)
-            for column in ordered
-            for suffix in REDUCED_SUFFIXES
-            if column.endswith(suffix)
+            column.removesuffix(suffix) for column in ordered for suffix in REDUCED_SUFFIXES if column.endswith(suffix)
         )
     )
     if len(base_signals) != expected_signal_count:
-        raise ValueError(
-            f"ReducedDeltaRidge 必须覆盖 {expected_signal_count} 个基础信号；实际 {len(base_signals)}"
-        )
+        raise ValueError(f"ReducedDeltaRidge 必须覆盖 {expected_signal_count} 个基础信号；实际 {len(base_signals)}")
     selected = tuple(
-        column
-        for column in ordered
-        if column in CURRENT_RESULT_FEATURES or column.endswith(REDUCED_SUFFIXES)
+        column for column in ordered if column in CURRENT_RESULT_FEATURES or column.endswith(REDUCED_SUFFIXES)
     )
     expected_count = len(CURRENT_RESULT_FEATURES) + expected_signal_count * len(REDUCED_SUFFIXES)
     if len(selected) != expected_count:
@@ -260,9 +253,7 @@ def _improvement(reference: float, candidate: float) -> float:
 def _delta_summary_rows(predictions: pd.DataFrame) -> list[dict[str, Any]]:
     persistence = predictions.loc[predictions["model_name"] == "Persistence"].copy()
     rows: list[dict[str, Any]] = []
-    for (fold_id, target_name), group in persistence.groupby(
-        ["fold_id", "target_name"], sort=True
-    ):
+    for (fold_id, target_name), group in persistence.groupby(["fold_id", "target_name"], sort=True):
         rows.append(_one_delta_summary(group, scope="FOLD", fold_id=fold_id, target_name=target_name))
     for target_name, group in persistence.groupby("target_name", sort=True):
         rows.append(_one_delta_summary(group, scope="POOLED", fold_id="POOLED", target_name=target_name))
@@ -325,9 +316,7 @@ def _build_mode_coverage(
                 "fallback_rate": fallback_count / count,
             }
         )
-    for (target_name, mode_code), group in mode_rows.groupby(
-        ["target_name", "mode_code"], sort=True
-    ):
+    for (target_name, mode_code), group in mode_rows.groupby(["target_name", "mode_code"], sort=True):
         fallback_count = int(group["mode_fallback"].sum())
         count = len(group)
         rows.append(
@@ -346,9 +335,11 @@ def _build_mode_coverage(
                 "fallback_rate": fallback_count / count,
             }
         )
-    return pd.DataFrame(rows).sort_values(
-        ["scope", "target_name", "fold_id", "mode_code"], kind="mergesort"
-    ).reset_index(drop=True)
+    return (
+        pd.DataFrame(rows)
+        .sort_values(["scope", "target_name", "fold_id", "mode_code"], kind="mergesort")
+        .reset_index(drop=True)
+    )
 
 
 def _overall_metrics(
@@ -356,18 +347,14 @@ def _overall_metrics(
     fold_metrics: pd.DataFrame,
 ) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    for (target_name, model_name), group in predictions.groupby(
-        ["target_name", "model_name"], sort=True
-    ):
+    for (target_name, model_name), group in predictions.groupby(["target_name", "model_name"], sort=True):
         primary = _metrics(
             group["y_true"].to_numpy(),
             group["y_pred"].to_numpy(),
             group["actual_delta"].to_numpy(),
             group["predicted_delta"].to_numpy(),
         )
-        persistence = group.assign(
-            y_pred=group["current_value"], predicted_delta=0.0
-        )
+        persistence = group.assign(y_pred=group["current_value"], predicted_delta=0.0)
         reference = _metrics(
             persistence["y_true"].to_numpy(),
             persistence["y_pred"].to_numpy(),
@@ -375,8 +362,7 @@ def _overall_metrics(
             persistence["predicted_delta"].to_numpy(),
         )
         per_fold = fold_metrics.loc[
-            (fold_metrics["target_name"] == target_name)
-            & (fold_metrics["model_name"] == model_name)
+            (fold_metrics["target_name"] == target_name) & (fold_metrics["model_name"] == model_name)
         ]
         row: dict[str, Any] = {
             "run_id": RUN_ID,
@@ -392,12 +378,8 @@ def _overall_metrics(
             "pooled_persistence_mae": reference["mae"],
             "pooled_persistence_rmse": reference["rmse"],
             "pooled_persistence_r2": reference["r2"],
-            "pooled_relative_mae_improvement_vs_persistence_pct": _improvement(
-                reference["mae"], primary["mae"]
-            ),
-            "pooled_relative_rmse_improvement_vs_persistence_pct": _improvement(
-                reference["rmse"], primary["rmse"]
-            ),
+            "pooled_relative_mae_improvement_vs_persistence_pct": _improvement(reference["mae"], primary["mae"]),
+            "pooled_relative_rmse_improvement_vs_persistence_pct": _improvement(reference["rmse"], primary["rmse"]),
             "pooled_r2_delta_vs_persistence": primary["r2"] - reference["r2"],
             "fit_time_seconds_total": per_fold["fit_time_seconds"].sum(),
             "predict_time_seconds_total": per_fold["predict_time_seconds"].sum(),
@@ -414,9 +396,7 @@ def _overall_metrics(
             row[f"fold_{metric}_mean"] = per_fold[metric].mean()
             row[f"fold_{metric}_std"] = per_fold[metric].std(ddof=1)
         rows.append(row)
-    return pd.DataFrame(rows).sort_values(
-        ["target_name", "model_name"], kind="mergesort"
-    ).reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(["target_name", "model_name"], kind="mergesort").reset_index(drop=True)
 
 
 def load_selection_protocol(path: Path) -> dict[str, Any]:
@@ -477,36 +457,29 @@ def evaluate_protocol_eligibility(
             raise ValueError(f"{target_name} 缺少唯一 Persistence 总体指标")
         reference = reference_rows.iloc[0]
         reference_folds = fold_metrics.loc[
-            (fold_metrics["target_name"] == target_name)
-            & (fold_metrics["model_name"] == "Persistence")
+            (fold_metrics["target_name"] == target_name) & (fold_metrics["model_name"] == "Persistence")
         ].set_index("fold_id")
         if len(reference_folds) != EXPECTED_FOLDS:
             raise ValueError(f"{target_name} Persistence 不是冻结 {EXPECTED_FOLDS} 折")
         for _, candidate in target_overall.iterrows():
             model_name = str(candidate["model_name"])
             candidate_folds = fold_metrics.loc[
-                (fold_metrics["target_name"] == target_name)
-                & (fold_metrics["model_name"] == model_name)
+                (fold_metrics["target_name"] == target_name) & (fold_metrics["model_name"] == model_name)
             ].set_index("fold_id")
             if set(candidate_folds.index) != set(reference_folds.index):
                 raise ValueError(f"{target_name}/{model_name} 折集合与 Persistence 不一致")
-            fold_ratios = (
-                candidate_folds.loc[reference_folds.index, "mae"].astype(float)
-                / reference_folds["mae"].astype(float)
-            )
+            fold_ratios = candidate_folds.loc[reference_folds.index, "mae"].astype(float) / reference_folds[
+                "mae"
+            ].astype(float)
             pooled_mae_ratio = float(candidate["pooled_mae"] / reference["pooled_mae"])
             pooled_rmse_ratio = float(candidate["pooled_rmse"] / reference["pooled_rmse"])
             folds_improved = int((fold_ratios < 1.0).sum())
             worst_fold_ratio = float(fold_ratios.max())
             gates = {
-                "gate_pooled_mae": pooled_mae_ratio
-                <= float(thresholds["pooled_mae_ratio_vs_persistence_max"]),
-                "gate_pooled_rmse": pooled_rmse_ratio
-                <= float(thresholds["pooled_rmse_ratio_vs_persistence_max"]),
-                "gate_fold_wins": folds_improved
-                >= int(thresholds["folds_with_mae_improvement_min"]),
-                "gate_worst_fold": worst_fold_ratio
-                <= float(thresholds["worst_fold_mae_ratio_vs_persistence_max"]),
+                "gate_pooled_mae": pooled_mae_ratio <= float(thresholds["pooled_mae_ratio_vs_persistence_max"]),
+                "gate_pooled_rmse": pooled_rmse_ratio <= float(thresholds["pooled_rmse_ratio_vs_persistence_max"]),
+                "gate_fold_wins": folds_improved >= int(thresholds["folds_with_mae_improvement_min"]),
+                "gate_worst_fold": worst_fold_ratio <= float(thresholds["worst_fold_mae_ratio_vs_persistence_max"]),
             }
             is_reference = model_name == "Persistence"
             eligible = bool(hard_gates_passed and all(gates.values()) and not is_reference)
@@ -525,24 +498,16 @@ def evaluate_protocol_eligibility(
                     "is_reference_model": is_reference,
                     "hard_gates_passed": bool(hard_gates_passed),
                     "pooled_mae_ratio_vs_persistence": pooled_mae_ratio,
-                    "pooled_mae_ratio_max": float(
-                        thresholds["pooled_mae_ratio_vs_persistence_max"]
-                    ),
+                    "pooled_mae_ratio_max": float(thresholds["pooled_mae_ratio_vs_persistence_max"]),
                     "gate_pooled_mae_passed": gates["gate_pooled_mae"],
                     "pooled_rmse_ratio_vs_persistence": pooled_rmse_ratio,
-                    "pooled_rmse_ratio_max": float(
-                        thresholds["pooled_rmse_ratio_vs_persistence_max"]
-                    ),
+                    "pooled_rmse_ratio_max": float(thresholds["pooled_rmse_ratio_vs_persistence_max"]),
                     "gate_pooled_rmse_passed": gates["gate_pooled_rmse"],
                     "folds_with_mae_improvement": folds_improved,
-                    "folds_with_mae_improvement_min": int(
-                        thresholds["folds_with_mae_improvement_min"]
-                    ),
+                    "folds_with_mae_improvement_min": int(thresholds["folds_with_mae_improvement_min"]),
                     "gate_fold_wins_passed": gates["gate_fold_wins"],
                     "worst_fold_mae_ratio_vs_persistence": worst_fold_ratio,
-                    "worst_fold_mae_ratio_max": float(
-                        thresholds["worst_fold_mae_ratio_vs_persistence_max"]
-                    ),
+                    "worst_fold_mae_ratio_max": float(thresholds["worst_fold_mae_ratio_vs_persistence_max"]),
                     "gate_worst_fold_passed": gates["gate_worst_fold"],
                     "median_fold_mae_ratio_vs_persistence": float(fold_ratios.median()),
                     "fold_mae_ratio_standard_deviation": float(fold_ratios.std(ddof=1)),
@@ -552,9 +517,7 @@ def evaluate_protocol_eligibility(
                     "selected_model_written": False,
                 }
             )
-    return pd.DataFrame(rows).sort_values(
-        ["target_name", "model_name"], kind="mergesort"
-    ).reset_index(drop=True)
+    return pd.DataFrame(rows).sort_values(["target_name", "model_name"], kind="mergesort").reset_index(drop=True)
 
 
 def _fmt(value: Any, digits: int = 4) -> str:
@@ -576,14 +539,11 @@ def _render_report(
 ) -> str:
     pooled_delta = delta_summary.loc[delta_summary["scope"] == "POOLED"]
     pooled_modes = mode_coverage.loc[
-        (mode_coverage["scope"] == "POOLED")
-        & (mode_coverage["target_name"] == "target_cu_g_l")
+        (mode_coverage["scope"] == "POOLED") & (mode_coverage["target_name"] == "target_cu_g_l")
     ].sort_values("validation_count", ascending=False)
     pooled_mode_n = int(pooled_modes["validation_count"].sum())
     pooled_mode_fallback = int(pooled_modes["fallback_count"].sum())
-    pooled_mode_fallback_rate = (
-        pooled_mode_fallback / pooled_mode_n if pooled_mode_n else float("nan")
-    )
+    pooled_mode_fallback_rate = pooled_mode_fallback / pooled_mode_n if pooled_mode_n else float("nan")
     eligible_count = int(eligibility["eligible_for_promotion"].sum())
     lines = [
         "# P2.1 保守残差/变化量基线实验说明（V1）",
@@ -751,9 +711,7 @@ def _render_report(
             "|---|---|---|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
-    for _, row in fold_metrics.sort_values(
-        ["target_name", "model_name", "fold_id"], kind="mergesort"
-    ).iterrows():
+    for _, row in fold_metrics.sort_values(["target_name", "model_name", "fold_id"], kind="mergesort").iterrows():
         digits = 3 if row["target_name"] == "target_as_mg_l" else 4
         lines.append(
             "| {target} | {model} | {fold} | {n} | {mae} | {rmse} | {r2} | {dr2} | {mi}% | {ri}% |".format(
@@ -805,7 +763,7 @@ def run_residual_baselines(
     selection_protocol_path: Path | None = None,
 ) -> ResidualRunResult:
     started = time.perf_counter()
-    generated_at = datetime.now(timezone.utc)
+    generated_at = datetime.now(UTC)
     if min_mode_group_size < 2:
         raise ValueError("min_mode_group_size 必须至少为 2")
     data = prepare_residual_data(input_dir)
@@ -877,9 +835,7 @@ def run_residual_baselines(
             ridge_fit_time = time.perf_counter() - fit_started
             predict_started = time.perf_counter()
             ridge_delta = np.asarray(
-                ridge.predict(
-                    reduced_features.loc[validation_ids, list(data.reduced_feature_columns)]
-                ),
+                ridge.predict(reduced_features.loc[validation_ids, list(data.reduced_feature_columns)]),
                 dtype=float,
             )
             ridge_predict_time = time.perf_counter() - predict_started
@@ -945,31 +901,29 @@ def run_residual_baselines(
                             "absolute_error": np.abs(y_true - y_pred),
                             "squared_error": np.square(y_true - y_pred),
                             "mode_train_group_count": (
-                                mode_counts.astype(float)
-                                if is_mode
-                                else np.full(len(y_true), np.nan)
+                                mode_counts.astype(float) if is_mode else np.full(len(y_true), np.nan)
                             ),
-                            "mode_fallback": (
-                                mode_fallback.astype(float)
-                                if is_mode
-                                else np.full(len(y_true), np.nan)
-                            ),
+                            "mode_fallback": (mode_fallback.astype(float) if is_mode else np.full(len(y_true), np.nan)),
                             "mode_global_train_median_delta": (
-                                np.full(len(y_true), global_median)
-                                if is_mode
-                                else np.full(len(y_true), np.nan)
+                                np.full(len(y_true), global_median) if is_mode else np.full(len(y_true), np.nan)
                             ),
                         }
                     )
                 )
 
-    predictions = pd.concat(prediction_frames, ignore_index=True).sort_values(
-        ["target_name", "model_name", "fold_id", "decision_at", "pair_id"],
-        kind="mergesort",
-    ).reset_index(drop=True)
-    fold_metrics = pd.DataFrame(metric_rows).sort_values(
-        ["target_name", "model_name", "fold_id"], kind="mergesort"
-    ).reset_index(drop=True)
+    predictions = (
+        pd.concat(prediction_frames, ignore_index=True)
+        .sort_values(
+            ["target_name", "model_name", "fold_id", "decision_at", "pair_id"],
+            kind="mergesort",
+        )
+        .reset_index(drop=True)
+    )
+    fold_metrics = (
+        pd.DataFrame(metric_rows)
+        .sort_values(["target_name", "model_name", "fold_id"], kind="mergesort")
+        .reset_index(drop=True)
+    )
     overall = _overall_metrics(predictions, fold_metrics)
     finite_prediction_fields = predictions[
         ["current_value", "y_true", "actual_delta", "predicted_delta", "y_pred"]
@@ -993,12 +947,12 @@ def run_residual_baselines(
         protocol,
         hard_gates_passed=hard_gates_passed,
     )
-    delta_summary = pd.DataFrame(_delta_summary_rows(predictions)).sort_values(
-        ["scope", "target_name", "fold_id"], kind="mergesort"
-    ).reset_index(drop=True)
-    mode_coverage = _build_mode_coverage(
-        predictions, min_group_size=min_mode_group_size
+    delta_summary = (
+        pd.DataFrame(_delta_summary_rows(predictions))
+        .sort_values(["scope", "target_name", "fold_id"], kind="mergesort")
+        .reset_index(drop=True)
     )
+    mode_coverage = _build_mode_coverage(predictions, min_group_size=min_mode_group_size)
     feature_manifest = pd.DataFrame(
         {
             "feature_order": np.arange(len(data.reduced_feature_columns)),
@@ -1090,9 +1044,7 @@ def run_residual_baselines(
         encoding="utf-8",
     )
 
-    source_hashes = {
-        INPUT_FILENAMES[key]: sha256_file(path) for key, path in data.base.source_paths.items()
-    }
+    source_hashes = {INPUT_FILENAMES[key]: sha256_file(path) for key, path in data.base.source_paths.items()}
     source_hashes[selection_protocol_path.name] = sha256_file(selection_protocol_path)
     output_hashes = {path.name: sha256_file(path) for path in paths.values()}
     duration = time.perf_counter() - started

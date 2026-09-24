@@ -1,9 +1,11 @@
 """Pinned optional CPU tensor runtime shared by neural and Bayesian methods."""
+
+import os
+import sys
 from contextlib import contextmanager
 from importlib import metadata
 from threading import RLock
-import os
-import sys
+
 from copper_mvp.common import PROJECT_ROOT, WorkbenchError
 
 _TENSOR_LOCK = RLock()
@@ -11,10 +13,18 @@ _TENSOR_LOCK = RLock()
 
 def load_tensor_runtime():
     from pathlib import Path
-    directory = Path(os.environ.get("COPPER_TENSOR_RUNTIME_DIR", PROJECT_ROOT / "runs" / "dependencies" / "torch-botorch-2.8.0"))
+
+    directory = Path(
+        os.environ.get("COPPER_TENSOR_RUNTIME_DIR", PROJECT_ROOT / "runs" / "dependencies" / "torch-botorch-2.8.0")
+    )
     if directory.is_dir() and str(directory) not in sys.path:
         sys.path.insert(0, str(directory))
-    for name, expected in {"torch": "2.8.0", "botorch": "0.17.2", "gpytorch": "1.15.2", "linear-operator": "0.6.1"}.items():
+    for name, expected in {
+        "torch": "2.8.0",
+        "botorch": "0.17.2",
+        "gpytorch": "1.15.2",
+        "linear-operator": "0.6.1",
+    }.items():
         try:
             actual = metadata.version(name)
         except metadata.PackageNotFoundError:
@@ -22,6 +32,7 @@ def load_tensor_runtime():
         if actual != expected:
             raise WorkbenchError("张量运行时版本与协议不一致: " + name, "TENSOR_DEPENDENCY")
     import torch
+
     torch.set_num_threads(1)
     return torch
 

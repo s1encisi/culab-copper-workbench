@@ -7,7 +7,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
-from copper_mas.config.settings import ProviderRuntime, SECRET_PATTERN
+from copper_mas.config.settings import SECRET_PATTERN, ProviderRuntime
 from copper_mas.data.leakage import assert_no_future_information
 
 
@@ -20,9 +20,7 @@ class SafeLLMEnvelope(BaseModel):
     schema_version: str = Field(min_length=1, max_length=32)
     pass_fail_status: str = Field(min_length=1, max_length=32)
     reason_codes: tuple[str, ...] = Field(default=(), max_length=64)
-    bounded_aggregate_metadata: dict[str, str | int | float | bool | None] = Field(
-        default_factory=dict, max_length=64
-    )
+    bounded_aggregate_metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict, max_length=64)
     instruction: str = Field(min_length=1, max_length=1000)
     requested_output: str = Field(min_length=1, max_length=500)
 
@@ -37,7 +35,7 @@ class SafeLLMEnvelope(BaseModel):
         return values
 
     @model_validator(mode="after")
-    def validate_scalar_metadata(self) -> "SafeLLMEnvelope":
+    def validate_scalar_metadata(self) -> SafeLLMEnvelope:
         for key, value in self.bounded_aggregate_metadata.items():
             if not key or len(key) > 128:
                 raise ValueError("聚合元数据键必须为1—128字符")

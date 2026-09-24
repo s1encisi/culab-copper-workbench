@@ -1,25 +1,26 @@
 """Independently audit saved optimizer comparisons and pair results within cases."""
+
 from __future__ import annotations
 
 import argparse
 import json
+import sys
 import warnings
 from collections import Counter
 from pathlib import Path
-import sys
 from time import perf_counter
 
 import numpy as np
 import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+from copper_mvp.bayesian_audit import audit_bayesian
+from copper_mvp.bayesian_problems import build_comparison_problem
 from copper_mvp.common import DEFAULT_RUNS_DIR, digest, file_hash, write_json
 from copper_mvp.data import DataRepository
 from copper_mvp.modeling import ModelManager
-from copper_mvp.bayesian_problems import build_comparison_problem
 from copper_mvp.optimizer_registry import OptimizerComparisonRequest
 from copper_mvp.scalarization_audit import audit_scalarization
-from copper_mvp.bayesian_audit import audit_bayesian
 
 
 def hv2d(front, reference):
@@ -96,13 +97,26 @@ def audit_comparison(run_id):
             raise ValueError("Independent hypervolume check failed")
         gcols = [c for c in frame if c.startswith("g") and c[1:].isdigit()]
         violation = np.maximum(frame[gcols].to_numpy() - 1e-8, 0).sum(axis=1)
-        rows.append({"case": case, "seed": seed, "optimizer": name, "hv": saved["hv"], "elapsed_ms": saved["elapsed_ms"],
-                     "initial_population_hash": saved["initial_population_hash"], "problem_signature": saved["problem_signature"],
-                     "total_evaluations": saved["total_evaluations"], "feasible_rate": saved["feasible_rate"],
-                     "decision_front_points": saved["decision_front_points"], "objective_front_points": saved["objective_front_points"],
-                     "verified_front_points": saved["verified_front_points"], "max_normalized_constraint_violation": float(violation.max()),
-                     "objective_minima": F.min(axis=0).tolist() if candidates else None,
-                     "stop_reason": saved["stop_reason"], "algorithm_executed": saved["algorithm_executed"]})
+        rows.append(
+            {
+                "case": case,
+                "seed": seed,
+                "optimizer": name,
+                "hv": saved["hv"],
+                "elapsed_ms": saved["elapsed_ms"],
+                "initial_population_hash": saved["initial_population_hash"],
+                "problem_signature": saved["problem_signature"],
+                "total_evaluations": saved["total_evaluations"],
+                "feasible_rate": saved["feasible_rate"],
+                "decision_front_points": saved["decision_front_points"],
+                "objective_front_points": saved["objective_front_points"],
+                "verified_front_points": saved["verified_front_points"],
+                "max_normalized_constraint_violation": float(violation.max()),
+                "objective_minima": F.min(axis=0).tolist() if candidates else None,
+                "stop_reason": saved["stop_reason"],
+                "algorithm_executed": saved["algorithm_executed"],
+            }
+        )
         for filename in ("problem.json", "result.json", "evaluations.csv"):
             hashes[(folder / filename).relative_to(root).as_posix()] = file_hash(folder / filename)
     bases = {(r["case"], r["seed"]): r for r in rows if r["optimizer"] == "NSGA-II"}
@@ -114,11 +128,16 @@ def audit_comparison(run_id):
         effects, ratios, wins, ties, losses = [], [], 0, 0, 0
         for row in group:
             base = bases[(row["case"], row["seed"])]
-            if row["problem_signature"] != base["problem_signature"] or row["initial_population_hash"] != base["initial_population_hash"]:
+            if (
+                row["problem_signature"] != base["problem_signature"]
+                or row["initial_population_hash"] != base["initial_population_hash"]
+            ):
                 raise ValueError("Paired problem or initial population mismatch")
             delta = row["hv"] - base["hv"]
             tolerance = max(1e-10, base["hv"] * 1e-8)
-            wins += int(delta > tolerance); losses += int(delta < -tolerance); ties += int(abs(delta) <= tolerance)
+            wins += int(delta > tolerance)
+            losses += int(delta < -tolerance)
+            ties += int(abs(delta) <= tolerance)
             if base["hv"] > 0:
                 effects.append((row["case"], delta / base["hv"]))
             ratios.append(row["elapsed_ms"] / base["elapsed_ms"])
@@ -127,26 +146,53 @@ def audit_comparison(run_id):
         ci = None
         if len(cases) > 1:
             rng = np.random.default_rng(20260912)
-            bootstrap = [np.median([v for i in rng.integers(0, len(blocks), len(blocks)) for v in blocks[i]]) for _ in range(2000)]
+            bootstrap = [
+                np.median([v for i in rng.integers(0, len(blocks), len(blocks)) for v in blocks[i]])
+                for _ in range(2000)
+            ]
             ci = np.quantile(bootstrap, [0.025, 0.975]).tolist()
-        paired[name] = {"pairs": len(group), "wins": wins, "ties": ties, "losses": losses,
-                        "relative_hv_median": float(np.median([v for _, v in effects])) if effects else None,
-                        "relative_hv_case_block_95ci": ci, "relative_hv_pairs_with_positive_baseline": len(effects),
-                        "elapsed_ratio_median": float(np.median(ratios)),
-                        "elapsed_ms_p50": float(np.quantile([r["elapsed_ms"] for r in group], 0.5)),
-                        "elapsed_ms_p95": float(np.quantile([r["elapsed_ms"] for r in group], 0.95))}
-    result = {"schema_version": "optimizer-independent-audit.g6f.v1", "run_id": run_id, "status": "passed", "runs": len(rows),
-              "request": request.model_dump(mode="json"), "paired_baseline": "NSGA-II", "paired": paired, "rows": rows,
-              "bootstrap": {"unit": "case_block_all_seeds_retained", "resamples": 2000, "seed": 20260912},
-              "total_solver_evaluations": sum(r["total_evaluations"] for r in rows),
-              "extra_independent_front_evaluations": extra_evaluations, "extra_problem_reference_evaluations": len(prepared_cases),
-              "extra_scalar_return_evaluations": scalar_evaluations, "scalarization_audits": scalar_audits,
-              "extra_bayesian_candidate_evaluations": bayesian_evaluations, "bayesian_audits": bayesian_audits,
-              "audit_elapsed_ms": (perf_counter() - started) * 1000, "source_hashes": hashes,
-              "auditor_sha256": file_hash(Path(__file__)),
-              "auditor_dependencies": {name: file_hash(Path(__file__).resolve().parents[1]/"src/copper_mvp"/name) for name in ("scalarization_audit.py", "bayesian_audit.py")}, "automatic_promotion": False}
+        paired[name] = {
+            "pairs": len(group),
+            "wins": wins,
+            "ties": ties,
+            "losses": losses,
+            "relative_hv_median": float(np.median([v for _, v in effects])) if effects else None,
+            "relative_hv_case_block_95ci": ci,
+            "relative_hv_pairs_with_positive_baseline": len(effects),
+            "elapsed_ratio_median": float(np.median(ratios)),
+            "elapsed_ms_p50": float(np.quantile([r["elapsed_ms"] for r in group], 0.5)),
+            "elapsed_ms_p95": float(np.quantile([r["elapsed_ms"] for r in group], 0.95)),
+        }
+    result = {
+        "schema_version": "optimizer-independent-audit.g6f.v1",
+        "run_id": run_id,
+        "status": "passed",
+        "runs": len(rows),
+        "request": request.model_dump(mode="json"),
+        "paired_baseline": "NSGA-II",
+        "paired": paired,
+        "rows": rows,
+        "bootstrap": {"unit": "case_block_all_seeds_retained", "resamples": 2000, "seed": 20260912},
+        "total_solver_evaluations": sum(r["total_evaluations"] for r in rows),
+        "extra_independent_front_evaluations": extra_evaluations,
+        "extra_problem_reference_evaluations": len(prepared_cases),
+        "extra_scalar_return_evaluations": scalar_evaluations,
+        "scalarization_audits": scalar_audits,
+        "extra_bayesian_candidate_evaluations": bayesian_evaluations,
+        "bayesian_audits": bayesian_audits,
+        "audit_elapsed_ms": (perf_counter() - started) * 1000,
+        "source_hashes": hashes,
+        "auditor_sha256": file_hash(Path(__file__)),
+        "auditor_dependencies": {
+            name: file_hash(Path(__file__).resolve().parents[1] / "src/copper_mvp" / name)
+            for name in ("scalarization_audit.py", "bayesian_audit.py")
+        },
+        "automatic_promotion": False,
+    }
     write_json(root / "independent_audit.json", result)
-    return {k: v for k, v in result.items() if k not in ("rows", "source_hashes", "scalarization_audits", "bayesian_audits")}
+    return {
+        k: v for k, v in result.items() if k not in ("rows", "source_hashes", "scalarization_audits", "bayesian_audits")
+    }
 
 
 if __name__ == "__main__":

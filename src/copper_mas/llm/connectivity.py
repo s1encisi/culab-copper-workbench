@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from collections.abc import Mapping, Sequence
+from datetime import UTC, datetime
 from time import perf_counter
-from typing import Mapping, Sequence
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field
@@ -17,7 +17,6 @@ from copper_mas.config.settings import (
 from copper_mas.contracts.runtime import AgentExecutionRecordV1, ResourceLedgerV1
 from copper_mas.llm.adapters import StructuredTask
 from copper_mas.llm.client import CallBudget, call_structured
-
 
 CONNECTIVITY_MAX_COMPLETION_TOKENS = 128
 CONNECTIVITY_PROVIDERS = ("kimi_orchestrator", "deepseek_executor")
@@ -34,10 +33,7 @@ def synthetic_connectivity_task_v1() -> StructuredTask:
 
     return StructuredTask(
         task_name="connectivity_v1",
-        system_prompt=(
-            "这是脱敏连通检查。不执行工艺推理，不调用工具，"
-            "仅按 JSON Schema 返回 status=OK。"
-        ),
+        system_prompt=("这是脱敏连通检查。不执行工艺推理，不调用工具，仅按 JSON Schema 返回 status=OK。"),
         user_payload={
             "artifact_ids": ["synthetic-connectivity-artifact-v1"],
             "schema_version": "1.0",
@@ -60,9 +56,7 @@ def synthetic_connectivity_task_v1() -> StructuredTask:
     )
 
 
-def _effective_run_limit(
-    budget: BudgetRuntime, *, declared_month_spend_cny: float
-) -> float:
+def _effective_run_limit(budget: BudgetRuntime, *, declared_month_spend_cny: float) -> float:
     if declared_month_spend_cny < 0:
         raise ValueError("declared_month_spend_cny 不得为负")
     if budget.monthly_cny_limit is None:
@@ -91,9 +85,7 @@ def run_connectivity_v1(
         raise ValueError("provider_names 必须是非空且不重复的序列")
     if any(name not in CONNECTIVITY_PROVIDERS for name in selected):
         raise ValueError("连通检查只允许 Kimi 和 DeepSeek 两个冻结供应商")
-    effective_limit = _effective_run_limit(
-        budget_runtime, declared_month_spend_cny=declared_month_spend_cny
-    )
+    effective_limit = _effective_run_limit(budget_runtime, declared_month_spend_cny=declared_month_spend_cny)
 
     runtime_env = dict(environ)
     runtime_env["COPPER_MAS_LIVE_CALLS"] = "true" if execute_live else "false"
@@ -108,9 +100,7 @@ def run_connectivity_v1(
     }
     provider_report: dict[str, object] = {
         name: {
-            "status": "READY_FOR_EXPLICIT_LIVE_RUN"
-            if not execute_live
-            else "PENDING",
+            "status": "READY_FOR_EXPLICIT_LIVE_RUN" if not execute_live else "PENDING",
             "provider": runtime.provider,
             "model": runtime.model,
             "base_url": runtime.base_url,
@@ -141,13 +131,13 @@ def run_connectivity_v1(
     call_budget = CallBudget(
         max_calls=len(selected),
         max_cost_cny=effective_limit,
-        provider_call_limits={name: 1 for name in selected},
+        provider_call_limits=dict.fromkeys(selected, 1),
     )
     records: list[AgentExecutionRecordV1] = []
     task = synthetic_connectivity_task_v1()
     for name in selected:
         runtime = runtimes[name]
-        started_at = datetime.now(timezone.utc)
+        started_at = datetime.now(UTC)
         started_perf = perf_counter()
         result = call_structured(
             runtime=runtime,
@@ -157,7 +147,7 @@ def run_connectivity_v1(
             transport=(transports or {}).get(name),
             timeout_seconds=30.0,
         )
-        ended_at = datetime.now(timezone.utc)
+        ended_at = datetime.now(UTC)
         record = AgentExecutionRecordV1(
             run_id=run_id,
             agent_id="ORCHESTRATOR",

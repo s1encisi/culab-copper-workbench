@@ -2,17 +2,15 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 import argparse
+import json
 import os
-from pathlib import Path
 import re
 import sys
 import tomllib
+from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlsplit
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC = PROJECT_ROOT / "src"
@@ -20,7 +18,6 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from build_file_manifest import collect_entries, sha256_file  # noqa: E402
-
 
 REQUIRED_PATHS = (
     "src/copper_mvp/specialized_registry.py",
@@ -212,12 +209,20 @@ def _check_exclusions(errors: list[str], checks: list[str], *, distribution: boo
                 continue  # Private configuration is never read.
             if path.suffix.lower() in FORBIDDEN_FILE_SUFFIXES:
                 forbidden.append(relative.as_posix())
-            if relative.parts and relative.parts[0] == "data" and any(token in relative.as_posix().lower() for token in FORBIDDEN_DATA_TOKENS):
+            if (
+                relative.parts
+                and relative.parts[0] == "data"
+                and any(token in relative.as_posix().lower() for token in FORBIDDEN_DATA_TOKENS)
+            ):
                 forbidden.append(relative.as_posix())
     if forbidden:
         errors.append(f"发现应排除的环境、缓存、模型或外部数据文件: {sorted(set(forbidden))}")
     else:
-        checks.append("分发包排除规则匹配" if distribution else "开发目录检查通过；运行目录、环境与构建缓存已跳过，正式数据无 2026/真值账本")
+        checks.append(
+            "分发包排除规则匹配"
+            if distribution
+            else "开发目录检查通过；运行目录、环境与构建缓存已跳过，正式数据无 2026/真值账本"
+        )
 
 
 def _check_frozen_inputs(errors: list[str], checks: list[str]) -> None:
@@ -231,9 +236,7 @@ def _check_frozen_inputs(errors: list[str], checks: list[str]) -> None:
         actual_hash = sha256_file(path)
         actual_size = path.stat().st_size
         if actual_hash != expected["sha256"] or actual_size != expected["size_bytes"]:
-            mismatch.append(
-                f"{relative}: sha256={actual_hash}, size={actual_size}"
-            )
+            mismatch.append(f"{relative}: sha256={actual_hash}, size={actual_size}")
     if mismatch:
         errors.append(f"冻结输入哈希或大小不一致: {mismatch}")
     else:
@@ -320,13 +323,9 @@ def _check_file_manifest(errors: list[str], checks: list[str]) -> None:
         or expected[path]["size_bytes"] != actual[path]["size_bytes"]
     )
     if missing or extra or mismatch:
-        errors.append(
-            f"全目录清单不一致: missing={missing}, extra={extra}, mismatch={mismatch}"
-        )
+        errors.append(f"全目录清单不一致: missing={missing}, extra={extra}, mismatch={mismatch}")
         return
-    sha_text = "".join(
-        f'{item["sha256"]} *{item["path"]}\n' for item in actual_entries
-    )
+    sha_text = "".join(f"{item['sha256']} *{item['path']}\n" for item in actual_entries)
     stored_sha_text = (PROJECT_ROOT / "MANIFEST.sha256").read_text(encoding="utf-8")
     if sha_text != stored_sha_text:
         errors.append("MANIFEST.sha256 与 JSON 清单不一致")
@@ -342,8 +341,11 @@ def _check_imports(errors: list[str], checks: list[str]) -> None:
         from copper_mvp.api import create_app
         from copper_mvp.common import APP_VERSION
         from copper_mvp.diagnostic_agent import AgentSettings
+
         AgentSettings.load()
-        project_version = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+        project_version = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"][
+            "version"
+        ]
         if APP_VERSION != project_version or create_app().version != APP_VERSION:
             raise ValueError("MVP API版本与pyproject.toml不一致")
     except Exception as exc:  # pragma: no cover - 仅作为安装验收
@@ -354,7 +356,17 @@ def _check_imports(errors: list[str], checks: list[str]) -> None:
 
 def _check_document_links(errors: list[str], checks: list[str]) -> None:
     """Check current local Markdown links without rewriting archived originals."""
-    candidates = [PROJECT_ROOT / name for name in ("README.md", "文件清单.md", "data/README.md", "models/README.md", "scripts/README.md", "provenance/README.md")]
+    candidates = [
+        PROJECT_ROOT / name
+        for name in (
+            "README.md",
+            "文件清单.md",
+            "data/README.md",
+            "models/README.md",
+            "scripts/README.md",
+            "provenance/README.md",
+        )
+    ]
     candidates.extend((PROJECT_ROOT / "docs").rglob("*.md"))
     broken = []
     checked = 0
@@ -372,7 +384,7 @@ def _check_document_links(errors: list[str], checks: list[str]) -> None:
                 raw = match.group(1).strip()
                 if not raw:
                     continue
-                target = raw[1:raw.index(">")] if raw.startswith("<") and ">" in raw else raw.split()[0]
+                target = raw[1 : raw.index(">")] if raw.startswith("<") and ">" in raw else raw.split()[0]
                 if target.startswith("#"):
                     continue
                 if urlsplit(target).scheme and not re.match(r"^[A-Za-z]:[\\/]", target):

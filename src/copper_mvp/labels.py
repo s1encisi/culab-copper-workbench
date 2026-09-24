@@ -1,16 +1,17 @@
 """Read-only development label ledger with point-in-time revision selection."""
+
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Iterable
 from datetime import timedelta
 from types import MappingProxyType
-from typing import Iterable
 
 import pandas as pd
 
 from copper_mvp.common import WorkbenchError, digest, file_hash
 from copper_mvp.data import finite
-from copper_mvp.data_contracts import LabelRecord, SOURCE_TIMEZONE, UNITS, envelope, source_time
+from copper_mvp.data_contracts import SOURCE_TIMEZONE, UNITS, LabelRecord, envelope, source_time
 
 
 class LabelLedger:
@@ -24,23 +25,25 @@ class LabelLedger:
                     raise WorkbenchError("标签修订缺少初始版本", "LABEL_REVISION")
             else:
                 previous = chain[-1]
-                if (record.revision != previous.revision + 1
+                if (
+                    record.revision != previous.revision + 1
                     or record.supersedes != previous.record_id
                     or record.available_at < previous.available_at
                     or record.pair_id != previous.pair_id
-                    or record.decision_at != previous.decision_at):
+                    or record.decision_at != previous.decision_at
+                ):
                     raise WorkbenchError("标签修订链冲突", "LABEL_REVISION")
             chain.append(record)
         self.records = ordered
         self._groups = MappingProxyType({key: tuple(chain) for key, chain in groups.items()})
         self.version = digest([r.record_id for r in ordered])
 
-    def with_revision(self, revision: LabelRecord) -> "LabelLedger":
+    def with_revision(self, revision: LabelRecord) -> LabelLedger:
         """Return a new ledger; previously issued snapshots and records remain valid."""
         return LabelLedger((*self.records, revision))
 
     @classmethod
-    def from_repository(cls, data, contract_id: str) -> "LabelLedger":
+    def from_repository(cls, data, contract_id: str) -> LabelLedger:
         sources = data.paths.sources()
         names = ("labels", "pairing", "index")
         if any(not sources[name].is_file() for name in names):
@@ -59,19 +62,27 @@ class LabelLedger:
             raise WorkbenchError("标签来源越过开发数据年份边界", "DATA_PERIOD")
         outcomes = pd.read_csv(sources["labels"])
         needed_outcomes = {"pair_id", "contract_id", "target_cu_g_l", "target_as_mg_l"}
-        needed_pairs = {"pair_id", "contract_id", "origin_event_id", "origin_recorded_at",
-                        "target_available_at", "target_sample_at_assumed"}
+        needed_pairs = {
+            "pair_id",
+            "contract_id",
+            "origin_event_id",
+            "origin_recorded_at",
+            "target_available_at",
+            "target_sample_at_assumed",
+        }
         if not needed_outcomes <= set(outcomes) or not needed_pairs <= set(pairs):
             raise WorkbenchError("开发标签来源字段不完整", "LABEL_SCHEMA")
-        if (outcomes.pair_id.duplicated().any() or pairs.pair_id.duplicated().any()
+        if (
+            outcomes.pair_id.duplicated().any()
+            or pairs.pair_id.duplicated().any()
             or pairs.origin_event_id.duplicated().any()
             or not set(outcomes.pair_id) <= set(pairs.pair_id)
             or set(pairs.origin_event_id) != set(data.frame.index)
             or not outcomes.contract_id.eq(contract_id).all()
-            or not pairs.contract_id.eq(contract_id).all()):
+            or not pairs.contract_id.eq(contract_id).all()
+        ):
             raise WorkbenchError("开发标签身份、合同或连接关系不一致", "LABEL_JOIN")
-        joined = pairs.merge(outcomes, on="pair_id", how="left", validate="one_to_one",
-                             suffixes=("", "_outcome"))
+        joined = pairs.merge(outcomes, on="pair_id", how="left", validate="one_to_one", suffixes=("", "_outcome"))
         source_version = digest(hashes)
         records = []
         outcome_ids = set(outcomes.pair_id)
@@ -93,12 +104,21 @@ class LabelLedger:
                     if value is None or value < 0:
                         value = None
                         missing = "missing_or_invalid_source_value"
-                    records.append(LabelRecord(
-                        event_id=row.origin_event_id, pair_id=row.pair_id, target=target,
-                        value=value, unit=UNITS[target], decision_at=decision, available_at=available,
-                        assumed_sample_time=assumed, source_version=source_version,
-                        quality_eligible=row.origin_event_id in data.primary_ids and value is not None,
-                        missing_reason=missing))
+                    records.append(
+                        LabelRecord(
+                            event_id=row.origin_event_id,
+                            pair_id=row.pair_id,
+                            target=target,
+                            value=value,
+                            unit=UNITS[target],
+                            decision_at=decision,
+                            available_at=available,
+                            assumed_sample_time=assumed,
+                            source_version=source_version,
+                            quality_eligible=row.origin_event_id in data.primary_ids and value is not None,
+                            missing_reason=missing,
+                        )
+                    )
             except (ValueError, TypeError) as exc:
                 raise WorkbenchError("标签时间、单位或数值合同不成立", "LABEL_CONTRACT") from exc
         if any(file_hash(sources[name]) != value for name, value in hashes.items()):
@@ -133,8 +153,11 @@ class LabelLedger:
         for record in self.latest(cutoff).values():
             if start < record.decision_at <= cutoff and record.value is not None and record.quality_eligible:
                 grouped[record.event_id].append(record)
-        return {key: tuple(sorted(value, key=lambda r: r.target))
-                for key, value in grouped.items() if {r.target for r in value} == {"cu", "as"}}
+        return {
+            key: tuple(sorted(value, key=lambda r: r.target))
+            for key, value in grouped.items()
+            if {r.target for r in value} == {"cu", "as"}
+        }
 
     def snapshot(self, as_of, *, days=30, limit=60, minimum=60, coverage=None) -> dict:
         eligible = self.eligible_events(as_of, days)
@@ -142,17 +165,27 @@ class LabelLedger:
         coverage_counts = {}
         if coverage is not None:
             for model, events in coverage.items():
-                coverage_counts[model] = {"available": len(set(events) & keys),
-                                          "missing": len(keys - set(events))}
+                coverage_counts[model] = {"available": len(set(events) & keys), "missing": len(keys - set(events))}
             keys = set.intersection(keys, *(set(events) for events in coverage.values())) if coverage else set()
         selected = sorted(keys, key=lambda e: (eligible[e][0].decision_at, e), reverse=True)[:limit]
         rows = [record.as_dict() for event in selected for record in eligible[event]]
-        return envelope("label-snapshot.g1", {
-            "evaluation_mode": "historical_replay", "as_of": source_time(as_of).isoformat(),
-            "window_start": (source_time(as_of) - timedelta(days=days)).isoformat(),
-            "window_basis": "event_decision_at", "ledger_version": digest([row["id"] for row in rows]),
-            "status": "READY_FOR_OFFLINE_EVALUATION" if len(selected) >= minimum else "INSUFFICIENT_LABELS",
-            "minimum_events": minimum, "window_mature_events": len(eligible),
-            "selected_events": len(selected), "event_ids": selected,
-            "common_event_hash": digest(sorted(selected)), "coverage": coverage_counts,
-            "labels": rows, "routing_action": "NONE"}, "development_ledger")
+        return envelope(
+            "label-snapshot.g1",
+            {
+                "evaluation_mode": "historical_replay",
+                "as_of": source_time(as_of).isoformat(),
+                "window_start": (source_time(as_of) - timedelta(days=days)).isoformat(),
+                "window_basis": "event_decision_at",
+                "ledger_version": digest([row["id"] for row in rows]),
+                "status": "READY_FOR_OFFLINE_EVALUATION" if len(selected) >= minimum else "INSUFFICIENT_LABELS",
+                "minimum_events": minimum,
+                "window_mature_events": len(eligible),
+                "selected_events": len(selected),
+                "event_ids": selected,
+                "common_event_hash": digest(sorted(selected)),
+                "coverage": coverage_counts,
+                "labels": rows,
+                "routing_action": "NONE",
+            },
+            "development_ledger",
+        )

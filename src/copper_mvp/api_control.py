@@ -1,8 +1,9 @@
 """Workbench APIs for reviewing exact Mock proposals and execution evidence."""
+
 from fastapi import APIRouter, Request
 
 from copper_mvp.common import WorkbenchError
-from copper_mvp.control.contracts import DEVICE, NOTICE, POLICY, ProposalInput, ApprovalInput, TickInput, FaultInput
+from copper_mvp.control.contracts import DEVICE, NOTICE, POLICY, ApprovalInput, FaultInput, ProposalInput, TickInput
 
 
 def control_router():
@@ -22,10 +23,16 @@ def control_router():
     def info(request: Request):
         principal = actor(request)
         client = service(request).client
-        return {"environment": "MOCK", "notice": NOTICE, "device_id": DEVICE, "policy_ref": POLICY,
-                "connected": client is not None, "can_control": principal.role == "owner",
-                "can_test_admin": principal.role == "owner" and bool(client and client.admin_key),
-                "operations": ["set_absolute"]}
+        return {
+            "environment": "MOCK",
+            "notice": NOTICE,
+            "device_id": DEVICE,
+            "policy_ref": POLICY,
+            "connected": client is not None,
+            "can_control": principal.role == "owner",
+            "can_test_admin": principal.role == "owner" and bool(client and client.admin_key),
+            "operations": ["set_absolute"],
+        }
 
     @router.get("/mock/devices/{device_id}/state")
     def state(request: Request, device_id: str):

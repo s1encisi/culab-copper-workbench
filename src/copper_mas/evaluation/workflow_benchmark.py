@@ -17,9 +17,10 @@ import json
 import math
 import platform
 import time
-from datetime import datetime, timezone
+from collections.abc import Iterable
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -37,7 +38,6 @@ from copper_mas.contracts.cards import (
 )
 from copper_mas.contracts.runtime import AgentExecutionRecordV1, ResourceLedgerV1
 from copper_mas.models.predictors import load_selected_predictor
-
 
 RUN_ID = "P3_DEVELOPMENT_BENCHMARK_V1_2024_2025"
 DIRECT_ARM = "deterministic_fixed_workflow"
@@ -62,8 +62,7 @@ def sha256_file(path: Path) -> str:
 
 def _write_json(path: Path, payload: dict[str, Any]) -> None:
     path.write_text(
-        json.dumps(_json_ready(payload), ensure_ascii=False, indent=2, sort_keys=True)
-        + "\n",
+        json.dumps(_json_ready(payload), ensure_ascii=False, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
 
@@ -208,44 +207,29 @@ def reconstruct_p2_oof_identity(
         how="inner",
         validate="one_to_one",
     )
-    sample["decision_at"] = _parse_time(
-        sample["decision_at"], source="cv_fold_manifest.decision_at"
-    )
-    sample["origin_recorded_at"] = _parse_time(
-        sample["origin_recorded_at"], source="training_index.origin_recorded_at"
-    )
+    sample["decision_at"] = _parse_time(sample["decision_at"], source="cv_fold_manifest.decision_at")
+    sample["origin_recorded_at"] = _parse_time(sample["origin_recorded_at"], source="training_index.origin_recorded_at")
     if not sample["decision_at"].eq(sample["origin_recorded_at"]).all():
         raise ValueError("OOF 决策时间与训练索引起点时间不一致")
     if sample["pair_id"].duplicated().any() or sample["origin_event_id"].duplicated().any():
         raise ValueError("重建后的 OOF 事件不唯一")
 
-    expected_from_p2 = int(
-        ((p2_manifest.get("counts") or {}).get("unique_oof_validation_pairs", -1))
-    )
+    expected_from_p2 = int((p2_manifest.get("counts") or {}).get("unique_oof_validation_pairs", -1))
     if expected_from_p2 != expected_events:
-        raise ValueError(
-            f"P2 清单记录的 OOF 数不是冻结值 {expected_events}: {expected_from_p2}"
-        )
+        raise ValueError(f"P2 清单记录的 OOF 数不是冻结值 {expected_events}: {expected_from_p2}")
     if len(sample) != expected_events:
         raise ValueError(f"重建 OOF 事件数应为 {expected_events}，实际 {len(sample)}")
 
-    fold_counts = {
-        str(key): int(value)
-        for key, value in sample.groupby("fold_id", sort=True).size().items()
-    }
+    fold_counts = {str(key): int(value) for key, value in sample.groupby("fold_id", sort=True).size().items()}
     expected_fold_counts = {
         str(key): int(value)
         for key, value in ((p2_manifest.get("counts") or {}).get("fold_validation_counts") or {}).items()
     }
     if fold_counts != expected_fold_counts:
-        raise ValueError(
-            f"重建的逐折 OOF 数与 P2 清单不一致: {fold_counts} != {expected_fold_counts}"
-        )
+        raise ValueError(f"重建的逐折 OOF 数与 P2 清单不一致: {fold_counts} != {expected_fold_counts}")
     if len(fold_counts) != expected_folds:
         raise ValueError(f"OOF 必须覆盖 {expected_folds} 个冻结时间折")
-    return sample.sort_values(
-        ["decision_at", "pair_id"], kind="mergesort"
-    ).reset_index(drop=True)
+    return sample.sort_values(["decision_at", "pair_id"], kind="mergesort").reset_index(drop=True)
 
 
 def _make_admission(raw: pd.Series) -> AsOfAdmissionCardV2:
@@ -261,9 +245,7 @@ def _make_admission(raw: pd.Series) -> AsOfAdmissionCardV2:
     )
 
 
-def _make_request(
-    *, admission: AsOfAdmissionCardV2, feature_row: dict[str, Any]
-) -> ForecastRequestV2:
+def _make_request(*, admission: AsOfAdmissionCardV2, feature_row: dict[str, Any]) -> ForecastRequestV2:
     decision_at = admission.decision_at
     observations = ObservationCardV2(
         origin_event_id=admission.origin_event_id,
@@ -321,9 +303,7 @@ def _card_row(arm: str, pair_id: str, fold_id: str, card: Any) -> dict[str, Any]
     row: dict[str, Any] = {"arm": arm, "pair_id": pair_id, "fold_id": fold_id}
     for key, value in payload.items():
         row[key] = (
-            json.dumps(value, ensure_ascii=False, separators=(",", ":"))
-            if isinstance(value, (list, dict))
-            else value
+            json.dumps(value, ensure_ascii=False, separators=(",", ":")) if isinstance(value, (list, dict)) else value
         )
     return row
 
@@ -348,16 +328,21 @@ def _resource_rows(
         payload["arm"] = arm
         payload["pair_id"] = pair_id
         payload["fold_id"] = fold_id
-        payload["reason_codes"] = json.dumps(
-            payload["reason_codes"], ensure_ascii=False, separators=(",", ":")
-        )
+        payload["reason_codes"] = json.dumps(payload["reason_codes"], ensure_ascii=False, separators=(",", ":"))
         records.append(payload)
     return ledger_row, records
 
 
 def _metric_row(
-    *, arm: str, target_name: str, display_name: str, unit: str,
-    scope: str, fold_id: str, y_true: np.ndarray, y_pred: np.ndarray,
+    *,
+    arm: str,
+    target_name: str,
+    display_name: str,
+    unit: str,
+    scope: str,
+    fold_id: str,
+    y_true: np.ndarray,
+    y_pred: np.ndarray,
 ) -> dict[str, Any]:
     return {
         "arm": arm,
@@ -379,8 +364,13 @@ def _percentile(values: pd.Series, percentile: float) -> float:
 
 
 def _render_report(
-    *, sample: pd.DataFrame, overall: pd.DataFrame, operational: pd.DataFrame,
-    modes: pd.DataFrame, parity: dict[str, Any], source_hash_verified: bool,
+    *,
+    sample: pd.DataFrame,
+    overall: pd.DataFrame,
+    operational: pd.DataFrame,
+    modes: pd.DataFrame,
+    parity: dict[str, Any],
+    source_hash_verified: bool,
 ) -> str:
     lines = [
         "# P3 2024—2025 开发期离线工作流基准报告 V1",
@@ -426,7 +416,10 @@ def _render_report(
             "",
             "## 4. 稳定性、延迟与资源",
             "",
-            "| 实验臂 | 尝试数 | 成功数 | 失败率 | 拒绝率 | 警告率 | p50 延迟(ms) | p95 延迟(ms) | 调用数 | 输入/输出 token | 成本(CNY) |",
+            (
+                "| 实验臂 | 尝试数 | 成功数 | 失败率 | 拒绝率 | 警告率 | p50 延迟(m"
+                "s) | p95 延迟(ms) | 调用数 | 输入/输出 token | 成本(CNY) |"
+            ),
             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
     )
@@ -462,11 +455,21 @@ def _render_report(
             "",
             "## 6. Single-LLM 实验臂状态",
             "",
-            "`single_llm_agent` 标记为 `PENDING_LIVE_CALL_AUTHORIZATION`。本报告没有伪造该臂的精度、延迟、token 或成本；在密钥轮换、调用预算和现场数据出站边界确认前不运行。",
+            (
+                "`single_llm_agent` 标记为 `PENDING_LIVE_CALL_AUTHORIZATION`。本报"
+                "告没有伪造该臂的精度、延迟、token 或成本；在密钥轮换、调用预算和现"
+                "场数据出站边界确认前不运行。"
+            ),
             "",
             "## 7. 结果解释边界",
             "",
-            "本基准证明离线多智能体图可以在不改变冻结数值预测的前提下增加结构化工况与审计轨迹。由于两个实验臂共用完全相同的 A4，预测指标相同是设计约束，不是多智能体提高精度的证据。后续若比较真实能力差异，应预先冻结不同的信息处理或路由机制，并继续使用相同 OOF/外部时序留出协议。",
+            (
+                "本基准证明离线多智能体图可以在不改变冻结数值预测的前提下增加结构化"
+                "工况与审计轨迹。由于两个实验臂共用完全相同的 A4，预测指标相同是设"
+                "计约束，不是多智能体提高精度的证据。后续若比较真实能力差异，应预先"
+                "冻结不同的信息处理或路由机制，并继续使用相同 OOF/外部时序留出协议"
+                "。"
+            ),
             "",
             "所有逐事件卡片、资源账本、指标、状态、报告和 SHA-256 清单均保存在本目录。",
             "",
@@ -486,7 +489,7 @@ def run_development_workflow_benchmark(
     """运行 P3 开发期离线对照并写出审计工件。"""
 
     run_started = time.perf_counter()
-    generated_at = datetime.now(timezone.utc)
+    generated_at = datetime.now(UTC)
     input_dir = Path(input_dir).resolve()
     p2_dir = Path(p2_dir).resolve()
     selected_model_manifest = Path(selected_model_manifest).resolve()
@@ -534,8 +537,13 @@ def run_development_workflow_benchmark(
     _require_columns(
         admissions,
         {
-            "origin_event_id", "decision_at", "feature_cutoff_at", "admission_status",
-            "reason_codes", "feature_group_counts", "missing_feature_groups",
+            "origin_event_id",
+            "decision_at",
+            "feature_cutoff_at",
+            "admission_status",
+            "reason_codes",
+            "feature_group_counts",
+            "missing_feature_groups",
             "source_quality_warnings",
         },
         source="as_of_admission_card_core_v2.csv",
@@ -544,12 +552,8 @@ def run_development_workflow_benchmark(
         raise ValueError("核心特征矩阵 origin_event_id 不唯一")
     if admissions["origin_event_id"].duplicated().any():
         raise ValueError("准入卡 origin_event_id 不唯一")
-    features["decision_at"] = _parse_time(
-        features["decision_at"], source="core_feature_matrix.decision_at"
-    )
-    admissions["decision_at"] = _parse_time(
-        admissions["decision_at"], source="as_of_admission.decision_at"
-    )
+    features["decision_at"] = _parse_time(features["decision_at"], source="core_feature_matrix.decision_at")
+    admissions["decision_at"] = _parse_time(admissions["decision_at"], source="as_of_admission.decision_at")
     admissions["feature_cutoff_at"] = _parse_time(
         admissions["feature_cutoff_at"], source="as_of_admission.feature_cutoff_at"
     )
@@ -564,17 +568,13 @@ def run_development_workflow_benchmark(
         if p2_expected_hashes.get(filename) != actual_hash:
             raise ValueError(f"{filename} 与 P2 运行时输入哈希不一致")
 
-    sample = reconstruct_p2_oof_identity(
-        training_index, folds, p2_manifest, expected_events=expected_events
-    )
+    sample = reconstruct_p2_oof_identity(training_index, folds, p2_manifest, expected_events=expected_events)
     feature_by_origin = features.set_index("origin_event_id", drop=False)
     admission_by_origin = admissions.set_index("origin_event_id", drop=False)
     missing_feature_ids = sorted(set(sample["origin_event_id"]) - set(feature_by_origin.index))
     missing_admission_ids = sorted(set(sample["origin_event_id"]) - set(admission_by_origin.index))
     if missing_feature_ids or missing_admission_ids:
-        raise ValueError(
-            f"OOF 输入不完整；特征缺失 {missing_feature_ids[:5]}，准入卡缺失 {missing_admission_ids[:5]}"
-        )
+        raise ValueError(f"OOF 输入不完整；特征缺失 {missing_feature_ids[:5]}，准入卡缺失 {missing_admission_ids[:5]}")
 
     event_rows: list[dict[str, Any]] = []
     mode_rows: list[dict[str, Any]] = []
@@ -638,11 +638,11 @@ def run_development_workflow_benchmark(
         )
 
         direct_run_id = f"{RUN_ID}::DIRECT::{pair_id}"
-        direct_started_at = datetime.now(timezone.utc)
+        direct_started_at = datetime.now(UTC)
         direct_started_perf = time.perf_counter()
         direct_numeric = predictor(feature_row, unused_mode)
         direct_latency_ms = (time.perf_counter() - direct_started_perf) * 1000
-        direct_ended_at = datetime.now(timezone.utc)
+        direct_ended_at = datetime.now(UTC)
         direct_resources = _direct_resource_record(
             run_id=direct_run_id,
             started_at=direct_started_at,
@@ -672,15 +672,9 @@ def run_development_workflow_benchmark(
         )
         graph_latency_ms = (time.perf_counter() - graph_started_perf) * 1000
 
-        cu_equal = (
-            direct_prediction.predicted_cu_g_l == graph_result.prediction.predicted_cu_g_l
-        )
-        as_equal = (
-            direct_prediction.predicted_as_mg_l == graph_result.prediction.predicted_as_mg_l
-        )
-        direct_warning_codes = list(admission.reason_codes) + list(
-            admission.source_quality_warnings
-        )
+        cu_equal = direct_prediction.predicted_cu_g_l == graph_result.prediction.predicted_cu_g_l
+        as_equal = direct_prediction.predicted_as_mg_l == graph_result.prediction.predicted_as_mg_l
+        direct_warning_codes = list(admission.reason_codes) + list(admission.source_quality_warnings)
         graph_warning_codes: list[str] = []
         for record in graph_result.resources.records:
             if record.status == "WARNING":
@@ -711,15 +705,11 @@ def run_development_workflow_benchmark(
                 "graph_status": "PASSED" if graph_result.audit.passed else "FAILED",
                 "direct_predicted_cu_g_l": direct_prediction.predicted_cu_g_l,
                 "graph_predicted_cu_g_l": graph_result.prediction.predicted_cu_g_l,
-                "cu_abs_difference": abs(
-                    direct_prediction.predicted_cu_g_l
-                    - graph_result.prediction.predicted_cu_g_l
-                ),
+                "cu_abs_difference": abs(direct_prediction.predicted_cu_g_l - graph_result.prediction.predicted_cu_g_l),
                 "direct_predicted_as_mg_l": direct_prediction.predicted_as_mg_l,
                 "graph_predicted_as_mg_l": graph_result.prediction.predicted_as_mg_l,
                 "as_abs_difference": abs(
-                    direct_prediction.predicted_as_mg_l
-                    - graph_result.prediction.predicted_as_mg_l
+                    direct_prediction.predicted_as_mg_l - graph_result.prediction.predicted_as_mg_l
                 ),
                 "numeric_exact_match": bool(cu_equal and as_equal),
                 "direct_end_to_end_latency_ms": direct_latency_ms,
@@ -767,12 +757,8 @@ def run_development_workflow_benchmark(
     parity: dict[str, Any] = {
         "status": "PASSED_EXACT_SAMPLEWISE_EQUALITY",
         "comparison_event_count": int(len(events)),
-        "cu_exact_match_count": int(
-            (events["cu_abs_difference"].astype(float) == 0.0).sum()
-        ),
-        "as_exact_match_count": int(
-            (events["as_abs_difference"].astype(float) == 0.0).sum()
-        ),
+        "cu_exact_match_count": int((events["cu_abs_difference"].astype(float) == 0.0).sum()),
+        "as_exact_match_count": int((events["as_abs_difference"].astype(float) == 0.0).sum()),
         "max_abs_difference_cu": float(events["cu_abs_difference"].max()),
         "max_abs_difference_as": float(events["as_abs_difference"].max()),
         "same_frozen_predictor_id": predictor.model_id,
@@ -867,9 +853,7 @@ def run_development_workflow_benchmark(
     operational_rows: list[dict[str, Any]] = []
     for arm in (DIRECT_ARM, GRAPH_ARM):
         status_column = "direct_status" if arm == DIRECT_ARM else "graph_status"
-        latency_column = (
-            "direct_end_to_end_latency_ms" if arm == DIRECT_ARM else "graph_end_to_end_latency_ms"
-        )
+        latency_column = "direct_end_to_end_latency_ms" if arm == DIRECT_ARM else "graph_end_to_end_latency_ms"
         warning_column = "direct_warning_count" if arm == DIRECT_ARM else "graph_warning_count"
         attempted = len(events)
         success = int(events[status_column].eq("PASSED").sum())
@@ -893,9 +877,7 @@ def run_development_workflow_benchmark(
                 "total_calls": int(arm_resources["total_calls"].sum()),
                 "total_input_tokens": int(arm_resources["total_input_tokens"].sum()),
                 "total_output_tokens": int(arm_resources["total_output_tokens"].sum()),
-                "total_estimated_cost_cny": float(
-                    arm_resources["total_estimated_cost_cny"].sum()
-                ),
+                "total_estimated_cost_cny": float(arm_resources["total_estimated_cost_cny"].sum()),
             }
         )
     operational = pd.DataFrame(operational_rows)
@@ -930,14 +912,9 @@ def run_development_workflow_benchmark(
         .reset_index()
     )
     mode_distribution["event_rate"] = mode_distribution["event_count"] / len(mode_events)
-    mode_distribution["warning_rate"] = (
-        mode_distribution["warning_event_count"] / mode_distribution["event_count"]
-    )
+    mode_distribution["warning_rate"] = mode_distribution["warning_event_count"] / mode_distribution["event_count"]
     warning_distribution = (
-        warnings.groupby(["arm", "agent_id", "warning_code"], sort=True)
-        .size()
-        .rename("event_count")
-        .reset_index()
+        warnings.groupby(["arm", "agent_id", "warning_code"], sort=True).size().rename("event_count").reset_index()
         if not warnings.empty
         else pd.DataFrame(columns=["arm", "agent_id", "warning_code", "event_count"])
     )
@@ -1066,8 +1043,7 @@ def run_development_workflow_benchmark(
             "unique_oof_events": int(len(sample)),
             "fold_count": int(sample["fold_id"].nunique()),
             "fold_validation_counts": {
-                str(key): int(value)
-                for key, value in sample.groupby("fold_id", sort=True).size().items()
+                str(key): int(value) for key, value in sample.groupby("fold_id", sort=True).size().items()
             },
             "completed_arms": 2,
             "pending_arms": 1,
@@ -1105,8 +1081,7 @@ def run_development_workflow_benchmark(
             "scikit_learn": sklearn.__version__,
         },
         "interpretation": (
-            "两臂共用同一冻结 A4；相同预测指标是设计约束。"
-            "多智能体图的本轮增量是工况、审计与资源轨迹，不代表精度提升。"
+            "两臂共用同一冻结 A4；相同预测指标是设计约束。多智能体图的本轮增量是工况、审计与资源轨迹，不代表精度提升。"
         ),
     }
     _write_json(output_dir / "run_manifest_v1.json", manifest)

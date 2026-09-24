@@ -2,16 +2,15 @@ from __future__ import annotations
 
 import json
 import warnings
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
+from copper_mvp.bayesian_optimizers import ENTROPY_OPTIMIZERS
 from copper_mvp.contracts import RunRequest
 from copper_mvp.optimization_problem import build_problem
 from copper_mvp.optimizer_comparison import compare_optimizers, run_optimizer
 from copper_mvp.optimizer_registry import OPTIMIZERS, OptimizerComparisonRequest
-from copper_mvp.bayesian_optimizers import ENTROPY_OPTIMIZERS
 
 
 def mathematical():
@@ -44,7 +43,7 @@ def test_three_optimizers_share_budget_inputs_reference_and_verified_math(tmp_pa
         for phase, count in run["evaluations"].items():
             assert int(frame.phase.eq(phase).sum()) == count
         X = frame[["x0", "x1"]].to_numpy()
-        np.testing.assert_allclose(frame[["f0", "f1"]], np.column_stack(((X * X).sum(1), ((X - 2)**2).sum(1))))
+        np.testing.assert_allclose(frame[["f0", "f1"]], np.column_stack(((X * X).sum(1), ((X - 2) ** 2).sum(1))))
         np.testing.assert_allclose(frame.g0, X.sum(1) - 3)
         front = np.array([[c["f1"], c["f2"]] for c in run["candidates"]])
         normalized = front / np.array(run["metric"]["scale"])
@@ -57,8 +56,10 @@ def test_three_optimizers_share_budget_inputs_reference_and_verified_math(tmp_pa
 def test_infeasible_and_plateau_results_keep_their_meaning(tmp_path):
     for kind in ("infeasible", "plateau"):
         prepared = mathematical()
+
         def evaluate(X, current=kind):
             return np.ones((len(X), 2)), np.full((len(X), 1), 1.0 if current == "infeasible" else -1.0), {}
+
         prepared.evaluate = evaluate
         prepared.ref_F = np.ones((1, 2))
         prepared.ref_G = np.full((1, 1), 1.0 if kind == "infeasible" else -1.0)
@@ -83,11 +84,13 @@ def test_spea2_run_state_does_not_leak_across_objective_ranges(tmp_path):
     first = run_optimizer(mathematical(), "SPEA2", 17, 128, 10, tmp_path / "first")
     shifted = mathematical()
     original = shifted.evaluate
+
     def evaluate(X):
         F, G, detail = original(X)
-        return F + np.array([-20., 20.]), G, detail
+        return F + np.array([-20.0, 20.0]), G, detail
+
     shifted.evaluate = evaluate
-    shifted.ref_F += np.array([-20., 20.])
+    shifted.ref_F += np.array([-20.0, 20.0])
     shifted.reference_front = None
     definition = shifted.specification()
     shifted.specification = lambda: {**definition, "test_fixture": "shifted_objectives"}
@@ -99,16 +102,27 @@ def test_spea2_run_state_does_not_leak_across_objective_ranges(tmp_path):
 
 def test_atomic_json_write_handles_a_brief_windows_reader(tmp_path):
     import os
+
     if os.name != "nt":
         return
     import ctypes
-    from ctypes import wintypes
     import threading
+    from ctypes import wintypes
+
     from copper_mvp.common import write_json
+
     path = tmp_path / "progress.json"
     write_json(path, {"step": 1})
     kernel = ctypes.windll.kernel32
-    kernel.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    kernel.CreateFileW.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        ctypes.c_void_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
     kernel.CreateFileW.restype = wintypes.HANDLE
     kernel.CloseHandle.argtypes = [wintypes.HANDLE]
     handle = kernel.CreateFileW(str(path), 0x80000000, 3, None, 3, 0x80, None)
@@ -119,4 +133,4 @@ def test_atomic_json_write_handles_a_brief_windows_reader(tmp_path):
         write_json(path, {"step": 2})
     finally:
         release.join()
-    assert json.loads(path.read_text()) == {"step": 2}
+    assert json.loads(path.read_text(encoding="utf-8")) == {"step": 2}

@@ -1,4 +1,5 @@
 """Additive, local-only G1 read APIs. No data paths or row uploads are accepted."""
+
 from __future__ import annotations
 
 import threading
@@ -32,8 +33,9 @@ def data_router() -> APIRouter:
         try:
             return model.model_validate(values)
         except ValidationError as exc:
-            raise HTTPException(422, detail=exc.errors(include_input=False, include_context=False,
-                                                       include_url=False)) from exc
+            raise HTTPException(
+                422, detail=exc.errors(include_input=False, include_context=False, include_url=False)
+            ) from exc
 
     @router.get("/dependencies")
     def dependencies(request: Request):
@@ -57,8 +59,7 @@ def data_router() -> APIRouter:
         payload = query(request, LabelQuery)
         current = service(request)
         current._verify_sources()
-        return current.labels.snapshot(payload.as_of, days=payload.days, limit=payload.limit,
-                                       minimum=payload.minimum)
+        return current.labels.snapshot(payload.as_of, days=payload.days, limit=payload.limit, minimum=payload.minimum)
 
     @router.get("/events/{event_id}/evidence")
     def evidence(request: Request, event_id: str):

@@ -1,4 +1,5 @@
 """Feedback requires device-ledger attribution plus SP and three fresh PV samples."""
+
 from __future__ import annotations
 
 import copy
@@ -36,24 +37,41 @@ def reconcile_feedback(command, record, state, previous):
         name = target["point_id"]
         point = state["points"][name]
         before = points.get(name, {})
-        good = (point["quality"] == "good" and state["virtual_time"] - point["sample_time"] <= 1
-                and abs(point["sp"] - target["value"]) < 1e-8
-                and abs(point["pv"] - target["value"]) <= command["request"]["tolerance"])
+        good = (
+            point["quality"] == "good"
+            and state["virtual_time"] - point["sample_time"] <= 1
+            and abs(point["sp"] - target["value"]) < 1e-8
+            and abs(point["pv"] - target["value"]) <= command["request"]["tolerance"]
+        )
         count = (before.get("good_samples", 0) + 1 if good else 0) if fresh_sample else before.get("good_samples", 0)
-        points[name] = {"target": target["value"], "sp": point["sp"], "pv": point["pv"], "unit": point["unit"],
-                        "quality": point["quality"], "sample_time": point["sample_time"],
-                        "good_samples": count, "status": "settled" if count >= 3 and good else "tracking"}
+        points[name] = {
+            "target": target["value"],
+            "sp": point["sp"],
+            "pv": point["pv"],
+            "unit": point["unit"],
+            "quality": point["quality"],
+            "sample_time": point["sample_time"],
+            "good_samples": count,
+            "status": "settled" if count >= 3 and good else "tracking",
+        }
         ready.append(count >= 3 and good)
     for target in record["rejected"]:
-        points[target["point_id"]] = {"target": target["value"], "status": "rejected",
-                                     "readback": state["points"][target["point_id"]]}
+        points[target["point_id"]] = {
+            "target": target["value"],
+            "status": "rejected",
+            "readback": state["points"][target["point_id"]],
+        }
     deadline = record["accepted_at"] + command["request"]["settling_deadline_seconds"]
     result["virtual_deadline"] = deadline
     result["virtual_time"] = state["virtual_time"]
     if fresh_sample:
-        result.setdefault("samples", []).append({
-            "observation_seq": state["observation_seq"], "time": state["virtual_time"],
-            "points": copy.deepcopy(points)})
+        result.setdefault("samples", []).append(
+            {
+                "observation_seq": state["observation_seq"],
+                "time": state["virtual_time"],
+                "points": copy.deepcopy(points),
+            }
+        )
     if ready and all(ready) and state["virtual_time"] <= deadline:
         result["reason"] = "已写入的点通过连续三次合格回读"
         return ("PARTIAL" if record["rejected"] else "VERIFIED"), result

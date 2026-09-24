@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import timezone
+from datetime import UTC
 from pathlib import Path
 from typing import Any
 
@@ -27,7 +27,6 @@ from copper_mas.contracts.cards import (
     OutcomeLedgerV2,
 )
 from copper_mas.data.leakage import assert_no_future_information
-
 
 SCHEMA_VERSION = "2.0"
 DEVELOPMENT_YEARS = frozenset({2024, 2025})
@@ -82,7 +81,7 @@ def _as_bool(value: Any, *, default: bool = False) -> bool:
 
 def _pair_id(origin_event_id: str, target_event_id: str | None) -> str:
     target_token = target_event_id if target_event_id is not None else "FINAL_AUDIT_NO_OUTCOME"
-    payload = f"{CONTRACT_ID}|{origin_event_id}|{target_token}".encode("utf-8")
+    payload = f"{CONTRACT_ID}|{origin_event_id}|{target_token}".encode()
     return "pair_" + hashlib.sha256(payload).hexdigest()[:20]
 
 
@@ -118,8 +117,7 @@ def _prepare_source(source: pd.DataFrame) -> pd.DataFrame:
     unexpected_years = sorted(set(frame["event_year"]) - DEVELOPMENT_YEARS)
     if unexpected_years:
         raise ValueError(
-            "P1 开发集构建器只允许读取 2024—2025；发现年份 "
-            f"{unexpected_years}。为防止提前接触 2026，已停止。"
+            f"P1 开发集构建器只允许读取 2024—2025；发现年份 {unexpected_years}。为防止提前接触 2026，已停止。"
         )
     if "year" in frame.columns:
         source_year = pd.to_numeric(frame["year"], errors="coerce")
@@ -172,15 +170,11 @@ def _build_pair_index(events: pd.DataFrame) -> pd.DataFrame:
                 "target_event_id": target_id,
                 "target_recorded_at": _iso(target["recorded_at"]) if target is not None else None,
                 "target_available_at": _iso(target["available_at_v2"]) if target is not None else None,
-                "target_sample_at_assumed": (
-                    _iso(target["sample_at_assumed_v2"]) if target is not None else None
-                ),
+                "target_sample_at_assumed": (_iso(target["sample_at_assumed_v2"]) if target is not None else None),
                 "origin_year": int(origin["event_year"]),
                 "target_year": int(target["event_year"]) if target is not None else pd.NA,
                 "cross_year_pair": (
-                    bool(origin["event_year"] != target["event_year"])
-                    if target is not None
-                    else False
+                    bool(origin["event_year"] != target["event_year"]) if target is not None else False
                 ),
                 "pair_status": "LABELED_STRICT_ADJACENT" if has_target else "FINAL_EVENT_AUDIT_NO_LABEL",
             }
@@ -232,9 +226,7 @@ def _build_as_of_admission_cards(events: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def _build_post_outcome_ledgers(
-    events: pd.DataFrame, pair_index: pd.DataFrame
-) -> tuple[pd.DataFrame, pd.DataFrame]:
+def _build_post_outcome_ledgers(events: pd.DataFrame, pair_index: pd.DataFrame) -> tuple[pd.DataFrame, pd.DataFrame]:
     evaluation_rows: list[dict[str, Any]] = []
     outcome_rows: list[dict[str, Any]] = []
 
@@ -314,8 +306,7 @@ def _verify_legacy_split(events: pd.DataFrame, legacy_split_path: Path | None) -
     }
     if observed_roles != expected_roles:
         raise ValueError(
-            "V1 split_manifest 年度角色与待迁移合同不一致: "
-            f"observed={observed_roles}, expected={expected_roles}"
+            f"V1 split_manifest 年度角色与待迁移合同不一致: observed={observed_roles}, expected={expected_roles}"
         )
     return True
 
@@ -365,9 +356,7 @@ def _build_expanding_window_folds(
         raise ValueError("活动 V2 合同固定生成 5 折扩展窗口；n_splits 必须为 5")
 
     eligible = evaluation_ledger.loc[evaluation_ledger["evaluation_eligible"].map(_as_bool)].copy()
-    lookup = pair_index[
-        ["pair_id", "sequence_index", "origin_recorded_at", "target_recorded_at"]
-    ].copy()
+    lookup = pair_index[["pair_id", "sequence_index", "origin_recorded_at", "target_recorded_at"]].copy()
     eligible = eligible.merge(lookup, on="pair_id", how="left", validate="one_to_one")
     eligible = eligible.sort_values("sequence_index", kind="mergesort").reset_index(drop=True)
     if len(eligible) <= n_splits:
@@ -384,8 +373,7 @@ def _build_expanding_window_folds(
         latest_train_outcome = pd.Timestamp(train["target_recorded_at_y"].max())
         if latest_train_outcome > validation_start:
             raise ValueError(
-                f"FOLD_{fold_number} 训练真值在验证开始后才可用: "
-                f"{latest_train_outcome} > {validation_start}"
+                f"FOLD_{fold_number} 训练真值在验证开始后才可用: {latest_train_outcome} > {validation_start}"
             )
 
         fold_id = f"FOLD_{fold_number}"
@@ -487,9 +475,7 @@ def build_event_dataset_v2(
     evaluation, outcomes = _build_post_outcome_ledgers(events, pair_index)
     legacy_verified = _verify_legacy_split(events, legacy_split_path)
     partitions = _build_partition_manifest(pair_index, as_of_cards, evaluation, outcomes)
-    cv_manifest, cv_summary = _build_expanding_window_folds(
-        pair_index, evaluation, n_splits=n_splits
-    )
+    cv_manifest, cv_summary = _build_expanding_window_folds(pair_index, evaluation, n_splits=n_splits)
     differences = _build_count_difference_summary(events, pair_index, as_of_cards, evaluation)
     return EventDatasetV2(
         event_pair_index=pair_index,
@@ -560,7 +546,7 @@ def write_event_dataset_v2(
         "build_id": "P1_EVENT_DATASET_V2_2024_2025",
         "schema_version": SCHEMA_VERSION,
         "contract_id": CONTRACT_ID,
-        "generated_at_utc": pd.Timestamp.now(tz=timezone.utc).isoformat(),
+        "generated_at_utc": pd.Timestamp.now(tz=UTC).isoformat(),
         "source": {
             "path": str(source_path.resolve()),
             "sha256": sha256_file(source_path),
@@ -582,23 +568,15 @@ def write_event_dataset_v2(
             "event_pair_index_rows": len(dataset.event_pair_index),
             "labeled_adjacent_pairs": int(dataset.event_pair_index["target_event_id"].notna().sum()),
             "as_of_admission_rows": len(dataset.as_of_admission_cards),
-            "as_of_admitted_or_warning": int(
-                dataset.as_of_admission_cards["admission_status"].ne("REJECTED").sum()
-            ),
+            "as_of_admitted_or_warning": int(dataset.as_of_admission_cards["admission_status"].ne("REJECTED").sum()),
             "evaluation_ledger_rows": len(dataset.evaluation_ledger),
-            "prospectively_sampled": int(
-                dataset.evaluation_ledger["prospectively_sampled"].map(_as_bool).sum()
-            ),
+            "prospectively_sampled": int(dataset.evaluation_ledger["prospectively_sampled"].map(_as_bool).sum()),
             "nonprospective_under_2h_assumption": int(
                 (~dataset.evaluation_ledger["prospectively_sampled"].map(_as_bool)).sum()
             ),
-            "primary_evaluation_eligible": int(
-                dataset.evaluation_ledger["evaluation_eligible"].map(_as_bool).sum()
-            ),
+            "primary_evaluation_eligible": int(dataset.evaluation_ledger["evaluation_eligible"].map(_as_bool).sum()),
             "outcome_ledger_rows": len(dataset.outcome_ledger),
-            "final_event_audit_without_label": int(
-                dataset.event_pair_index["target_event_id"].isna().sum()
-            ),
+            "final_event_audit_without_label": int(dataset.event_pair_index["target_event_id"].isna().sum()),
             "cv_folds": int(dataset.cv_fold_summary["fold_id"].nunique()),
         },
         "safety": {
@@ -609,14 +587,11 @@ def write_event_dataset_v2(
             "outcomes_physically_isolated": True,
         },
         "artifacts": {
-            filename: {"rows": len(artifacts[filename]), "sha256": digest}
-            for filename, digest in hashes.items()
+            filename: {"rows": len(artifacts[filename]), "sha256": digest} for filename, digest in hashes.items()
         },
     }
     manifest_path = output_dir / "build_manifest_v2.json"
     temporary_manifest = manifest_path.with_suffix(".json.tmp")
-    temporary_manifest.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
+    temporary_manifest.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     temporary_manifest.replace(manifest_path)
     return manifest

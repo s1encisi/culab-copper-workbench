@@ -6,11 +6,10 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 SRC = PROJECT_ROOT / "src"
@@ -58,15 +57,10 @@ def main() -> int:
     if args.execute_live:
         acknowledged = args.acknowledge_max_cost_cny
         if acknowledged is None or abs(acknowledged - budget.max_cny_per_run) > 1e-12:
-            parser.error(
-                "真实连通必须显式传入 "
-                f"--acknowledge-max-cost-cny {budget.max_cny_per_run:g}"
-            )
+            parser.error(f"真实连通必须显式传入 --acknowledge-max-cost-cny {budget.max_cny_per_run:g}")
 
-    provider_names = (
-        CONNECTIVITY_PROVIDERS if args.provider == "all" else (args.provider,)
-    )
-    run_id = "llm-connectivity-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    provider_names = CONNECTIVITY_PROVIDERS if args.provider == "all" else (args.provider,)
+    run_id = "llm-connectivity-" + datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     try:
         report = run_connectivity_v1(
             registry=registry,

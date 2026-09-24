@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from datetime import datetime
 from pathlib import Path
-import sys
-
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src"
@@ -79,9 +78,7 @@ def main() -> int:
     checkpoint = output_dir / "checkpoints.sqlite"
     if checkpoint.exists():
         checkpoint.unlink()
-    with LangGraphRunner(
-        checkpoint_path=checkpoint, predict=persistence_predictor
-    ) as runner:
+    with LangGraphRunner(checkpoint_path=checkpoint, predict=persistence_predictor) as runner:
         result = runner.invoke(plan=plan, request=request, feature_row=features)
         replay = runner.invoke(plan=plan, request=request, feature_row=features)
     output = {

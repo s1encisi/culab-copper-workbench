@@ -27,9 +27,7 @@ def _mode() -> ProcessModeCardV2:
 
 
 def test_persistence_predictor_uses_current_results_only() -> None:
-    result = PersistencePredictor()(
-        {"origin_cu_g_l": 4.2, "origin_as_mg_l": 1500}, _mode()
-    )
+    result = PersistencePredictor()({"origin_cu_g_l": 4.2, "origin_as_mg_l": 1500}, _mode())
     assert result.predicted_cu_g_l == 4.2
     assert result.predicted_as_mg_l == 1500
 
@@ -74,12 +72,8 @@ def _write_bundle(path: Path) -> None:
 def test_candidate_loader_verifies_and_predicts(tmp_path: Path) -> None:
     bundle = tmp_path / "bundle"
     _write_bundle(bundle)
-    predictor = CandidateBundlePredictor(
-        bundle, cu_model_name="Dummy", as_model_name="Dummy"
-    )
-    result = predictor(
-        {"origin_cu_g_l": 4.0, "origin_as_mg_l": 40.0}, _mode()
-    )
+    predictor = CandidateBundlePredictor(bundle, cu_model_name="Dummy", as_model_name="Dummy")
+    result = predictor({"origin_cu_g_l": 4.0, "origin_as_mg_l": 40.0}, _mode())
     assert result.predicted_cu_g_l == 3.0
     assert result.predicted_as_mg_l == 30.0
 

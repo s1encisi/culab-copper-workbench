@@ -1,17 +1,19 @@
 """Persisted synthetic device: independent of historical chemistry and workbench data."""
+
 from __future__ import annotations
 
 import copy
-from contextlib import contextmanager
 import json
 import math
-from pathlib import Path
 import random
 import sqlite3
 import time
+from contextlib import contextmanager
+from pathlib import Path
 
 from copper_mvp.common import WorkbenchError, digest
-from copper_mvp.control.contracts import DEVICE, POLICY, POINTS, NOTICE, ProposalInput, FaultInput
+from copper_mvp.control.contracts import DEVICE, NOTICE, POINTS, POLICY, FaultInput, ProposalInput
+
 
 def canonical_hash(payload):
     return digest(payload)
@@ -33,19 +35,55 @@ class MockDevice:
 
     @staticmethod
     def initial(seed):
-        return {"device_id": DEVICE, "environment": "MOCK", "notice": NOTICE, "policy_ref": POLICY,
-                "seed": seed, "fault_script_version": "mock-faults.v1", "virtual_time": 0.,
-                "device_epoch": 1, "state_version": 1, "observation_seq": 0,
-                "mode": "remote", "connected": True, "running": True,
-                "interlocks_ok": True, "estop_latched": False, "highest_fence": 0, "last_command_sequence": 0,
-                "faults": {"reject_writes": False, "partial_write_count": 2, "ack_loss": False,
-                           "stuck_pv": False, "bad_quality": False, "stale": False,
-                           "readback_bias": 0., "sensor_bias": 0., "noise": 0.,
-                           "ack_delay_seconds": 0., "write_delay_seconds": .2, "pv_delay_seconds": 0.},
-                "points": {p: {"sp": 100., "pv": 100., "unit": "A", "quantity": "electric_current",
-                           "quality": "good", "sample_time": 0., "minimum": 0., "maximum": 200.,
-                           "max_delta": 10., "max_rate_per_second": 10., "response_k": .5}
-                           for p in POINTS}}
+        return {
+            "device_id": DEVICE,
+            "environment": "MOCK",
+            "notice": NOTICE,
+            "policy_ref": POLICY,
+            "seed": seed,
+            "fault_script_version": "mock-faults.v1",
+            "virtual_time": 0.0,
+            "device_epoch": 1,
+            "state_version": 1,
+            "observation_seq": 0,
+            "mode": "remote",
+            "connected": True,
+            "running": True,
+            "interlocks_ok": True,
+            "estop_latched": False,
+            "highest_fence": 0,
+            "last_command_sequence": 0,
+            "faults": {
+                "reject_writes": False,
+                "partial_write_count": 2,
+                "ack_loss": False,
+                "stuck_pv": False,
+                "bad_quality": False,
+                "stale": False,
+                "readback_bias": 0.0,
+                "sensor_bias": 0.0,
+                "noise": 0.0,
+                "ack_delay_seconds": 0.0,
+                "write_delay_seconds": 0.2,
+                "pv_delay_seconds": 0.0,
+            },
+            "points": {
+                p: {
+                    "sp": 100.0,
+                    "pv": 100.0,
+                    "unit": "A",
+                    "quantity": "electric_current",
+                    "quality": "good",
+                    "sample_time": 0.0,
+                    "minimum": 0.0,
+                    "maximum": 200.0,
+                    "max_delta": 10.0,
+                    "max_rate_per_second": 10.0,
+                    "response_k": 0.5,
+                }
+                for p in POINTS
+            },
+        }
 
     @contextmanager
     def connection(self):
@@ -79,8 +117,8 @@ class MockDevice:
         for name, point in result["points"].items():
             point["sp"] += state["faults"]["readback_bias"]
             point["pv"] += state["faults"]["sensor_bias"] + random.Random(
-                f'{state["seed"]}:{state["observation_seq"]}:{name}').uniform(
-                -state["faults"]["noise"], state["faults"]["noise"])
+                f"{state['seed']}:{state['observation_seq']}:{name}"
+            ).uniform(-state["faults"]["noise"], state["faults"]["noise"])
             point["quality"] = "bad" if state["faults"]["bad_quality"] or not state["connected"] else "good"
         return result
 
@@ -89,7 +127,9 @@ class MockDevice:
             state = self.observed(self._load(c))
             records = self._ledger(c)
         state["command_queue"] = [r["command_id"] for r in records if r["write_status"] == "pending"]
-        state["execution_log"] = [{k: r[k] for k in ("command_id", "sequence", "device_epoch", "write_status")} for r in records[-20:]]
+        state["execution_log"] = [
+            {k: r[k] for k in ("command_id", "sequence", "device_epoch", "write_status")} for r in records[-20:]
+        ]
         return state
 
     def read_points(self):
@@ -101,11 +141,20 @@ class MockDevice:
         request = ProposalInput.model_validate(command["request"])
         if command.get("environment") != "MOCK" or command.get("policy_ref") != POLICY:
             raise WorkbenchError("仅接受合成协议命令", "MOCK_POLICY")
-        if command["expected_device_epoch"] != state["device_epoch"] or command["expected_state_version"] != state["state_version"]:
+        if (
+            command["expected_device_epoch"] != state["device_epoch"]
+            or command["expected_state_version"] != state["state_version"]
+        ):
             raise WorkbenchError("设备控制前提已变化，请重新提案", "STALE_PROPOSAL")
         if time.time() >= command["expires_at"]:
             raise WorkbenchError("命令已过期", "COMMAND_EXPIRED")
-        if not state["connected"] or not state["running"] or state["mode"] != "remote" or state["estop_latched"] or not state["interlocks_ok"]:
+        if (
+            not state["connected"]
+            or not state["running"]
+            or state["mode"] != "remote"
+            or state["estop_latched"]
+            or not state["interlocks_ok"]
+        ):
             raise WorkbenchError("设备模式、连接、运行或联锁条件不允许写入", "MOCK_INTERLOCK")
         for target in request.targets:
             point = state["points"][target.point_id]
@@ -142,15 +191,24 @@ class MockDevice:
             now, faults = state["virtual_time"], state["faults"]
             count = 0 if faults["reject_writes"] else faults["partial_write_count"]
             accepted = command["request"]["targets"][:count]
-            record = {"command_id": command["command_id"], "payload_hash": payload_hash,
-                      "sequence": state["last_command_sequence"], "device_epoch": state["device_epoch"],
-                      "fencing_token": fencing_token, "accepted_at": now,
-                      "ack_at": now + faults["ack_delay_seconds"], "ack_lost": faults["ack_loss"],
-                      "apply_at": now + faults["write_delay_seconds"], "ramp_seconds": command["request"]["ramp_seconds"],
-                      "pv_after": now + faults["write_delay_seconds"] + faults["pv_delay_seconds"],
-                      "accepted": accepted, "rejected": command["request"]["targets"][len(accepted):],
-                      "before": {p["point_id"]: state["points"][p["point_id"]]["sp"] for p in accepted},
-                      "write_status": "pending" if accepted else "rejected", "write_count": 0}
+            record = {
+                "command_id": command["command_id"],
+                "payload_hash": payload_hash,
+                "sequence": state["last_command_sequence"],
+                "device_epoch": state["device_epoch"],
+                "fencing_token": fencing_token,
+                "accepted_at": now,
+                "ack_at": now + faults["ack_delay_seconds"],
+                "ack_lost": faults["ack_loss"],
+                "apply_at": now + faults["write_delay_seconds"],
+                "ramp_seconds": command["request"]["ramp_seconds"],
+                "pv_after": now + faults["write_delay_seconds"] + faults["pv_delay_seconds"],
+                "accepted": accepted,
+                "rejected": command["request"]["targets"][len(accepted) :],
+                "before": {p["point_id"]: state["points"][p["point_id"]]["sp"] for p in accepted},
+                "write_status": "pending" if accepted else "rejected",
+                "write_count": 0,
+            }
             c.execute("INSERT INTO ledger VALUES(?,?,?)", (record["command_id"], payload_hash, json.dumps(record)))
             state["state_version"] += 1
             self._save(c, state)
@@ -172,7 +230,7 @@ class MockDevice:
             c.execute("BEGIN IMMEDIATE")
             state = self._load(c)
             records = self._ledger(c)
-            steps = max(1, math.ceil(seconds / .1))
+            steps = max(1, math.ceil(seconds / 0.1))
             dt = seconds / steps
             for _ in range(steps):
                 state["virtual_time"] += dt
@@ -180,13 +238,21 @@ class MockDevice:
                 for r in records:
                     if r["write_status"] != "pending":
                         continue
-                    if not state["connected"] or not state["running"] or state["mode"] != "remote" or state["estop_latched"] or not state["interlocks_ok"]:
+                    if (
+                        not state["connected"]
+                        or not state["running"]
+                        or state["mode"] != "remote"
+                        or state["estop_latched"]
+                        or not state["interlocks_ok"]
+                    ):
                         r["write_status"] = "interrupted"
                         continue
-                    fraction = min(1., max(0., (now - r["apply_at"]) / r["ramp_seconds"]))
+                    fraction = min(1.0, max(0.0, (now - r["apply_at"]) / r["ramp_seconds"]))
                     for target in r["accepted"]:
                         point = state["points"][target["point_id"]]
-                        value = r["before"][target["point_id"]] + fraction * (target["value"] - r["before"][target["point_id"]])
+                        value = r["before"][target["point_id"]] + fraction * (
+                            target["value"] - r["before"][target["point_id"]]
+                        )
                         if value != point["sp"]:
                             point["sp"] = value
                             state["state_version"] += 1
@@ -197,7 +263,9 @@ class MockDevice:
                     if state["running"] and not state["faults"]["stuck_pv"] and not delayed:
                         # The configured response coefficient is specified per second.
                         delta = (1 - (1 - point["response_k"]) ** dt) * (point["sp"] - point["pv"])
-                        point["pv"] += max(-point["max_rate_per_second"] * dt, min(point["max_rate_per_second"] * dt, delta))
+                        point["pv"] += max(
+                            -point["max_rate_per_second"] * dt, min(point["max_rate_per_second"] * dt, delta)
+                        )
             if not state["faults"]["stale"] and state["connected"]:
                 state["observation_seq"] += 1
                 for point in state["points"].values():

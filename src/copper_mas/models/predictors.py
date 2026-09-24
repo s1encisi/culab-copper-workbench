@@ -5,8 +5,9 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any
 
 import joblib
 import pandas as pd
@@ -29,9 +30,7 @@ class PersistencePredictor:
 
     model_id = "PERSISTENCE_CURRENT_RESULT_V1"
 
-    def __call__(
-        self, feature_row: Mapping[str, Any], process_mode: ProcessModeCardV2
-    ) -> NumericPrediction:
+    def __call__(self, feature_row: Mapping[str, Any], process_mode: ProcessModeCardV2) -> NumericPrediction:
         del process_mode
         assert_no_future_information(feature_row)
         try:
@@ -51,10 +50,7 @@ def load_selected_predictor(manifest_path: str | Path) -> PersistencePredictor:
     if payload.get("external_2026_read") is not False:
         raise ValueError("最终选择清单必须明确声明 external_2026_read=false")
     selected = payload.get("selected_per_target") or {}
-    models = {
-        (selected.get(target) or {}).get("model_name")
-        for target in ("target_cu_g_l", "target_as_mg_l")
-    }
+    models = {(selected.get(target) or {}).get("model_name") for target in ("target_cu_g_l", "target_as_mg_l")}
     if models == {"Persistence"}:
         predictor = PersistencePredictor()
         expected_id = (payload.get("a4_predictor") or {}).get("model_id")
@@ -88,9 +84,7 @@ class CandidateBundlePredictor:
         if not self.feature_names:
             raise ValueError("候选包缺少冻结特征顺序")
         expected_feature_hash = features.get("ordered_names_sha256")
-        feature_payload = json.dumps(
-            list(self.feature_names), ensure_ascii=False, separators=(",", ":")
-        )
+        feature_payload = json.dumps(list(self.feature_names), ensure_ascii=False, separators=(",", ":"))
         actual_feature_hash = hashlib.sha256(feature_payload.encode("utf-8")).hexdigest()
         if actual_feature_hash != expected_feature_hash:
             raise ValueError("冻结特征顺序哈希不一致")
@@ -98,15 +92,11 @@ class CandidateBundlePredictor:
         candidates = manifest.get("serialized_candidates") or []
         self._cu_model = self._load_one(candidates, cu_model_name, "target_cu_g_l")
         self._as_model = self._load_one(candidates, as_model_name, "target_as_mg_l")
-        self.model_id = (
-            f"{manifest['bundle_id']}::Cu={cu_model_name}::As={as_model_name}"
-        )
+        self.model_id = f"{manifest['bundle_id']}::Cu={cu_model_name}::As={as_model_name}"
 
     def _load_one(self, candidates: list[dict[str, Any]], model_name: str, target: str) -> Any:
         matches = [
-            item
-            for item in candidates
-            if item.get("model_name") == model_name and item.get("target_name") == target
+            item for item in candidates if item.get("model_name") == model_name and item.get("target_name") == target
         ]
         if len(matches) != 1:
             raise ValueError(f"候选包中找不到唯一模型: {model_name}/{target}")
@@ -121,9 +111,7 @@ class CandidateBundlePredictor:
             raise ValueError(f"候选模型 SHA-256 校验失败: {artifact}")
         return joblib.load(path)
 
-    def __call__(
-        self, feature_row: Mapping[str, Any], process_mode: ProcessModeCardV2
-    ) -> NumericPrediction:
+    def __call__(self, feature_row: Mapping[str, Any], process_mode: ProcessModeCardV2) -> NumericPrediction:
         del process_mode
         assert_no_future_information(feature_row)
         missing = [name for name in self.feature_names if name not in feature_row]

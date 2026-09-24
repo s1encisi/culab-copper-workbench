@@ -1,9 +1,10 @@
 """Run a multi-seed inventory comparison on authorized local development data."""
-from pathlib import Path
+
 import argparse
 import json
 import os
 import sys
+from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 for name in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS"):
@@ -20,8 +21,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--request-key", required=True)
     parser.add_argument("--reference-comparison-id", required=True)
-    parser.add_argument("--methods", nargs="+", choices=METHOD_IDS,
-                        default=["CatBoost", "NGBoost", "EBM", "Cubist"])
+    parser.add_argument("--methods", nargs="+", choices=METHOD_IDS, default=["CatBoost", "NGBoost", "EBM", "Cubist"])
     parser.add_argument("--seeds", type=int, nargs="+", default=list(range(20260911, 20260916)))
     parser.add_argument("--run-dir", type=Path, default=Path("runs/mvp"))
     parser.add_argument("--max-wall-seconds", type=int, default=1800)
@@ -34,10 +34,21 @@ if __name__ == "__main__":
     if not root.is_relative_to((PROJECT_ROOT / "runs").resolve()):
         parser.error("results must remain under local runs/")
     print(json.dumps({"study_id": digest(args.request_key)[:32], "seeds": args.seeds}), flush=True)
-    folder, result = run_inventory_study(DataRepository(), root, args.reference_comparison_id,
-        args.request_key, args.methods, args.seeds,
+    folder, result = run_inventory_study(
+        DataRepository(),
+        root,
+        args.reference_comparison_id,
+        args.request_key,
+        args.methods,
+        args.seeds,
         progress=lambda value: print(json.dumps(value, ensure_ascii=False), flush=True),
-        max_wall_seconds=args.max_wall_seconds)
-    print(json.dumps({"status": result["status"], "common_events": result["common_events"],
-                      "output": str(folder)}, ensure_ascii=False), flush=True)
+        max_wall_seconds=args.max_wall_seconds,
+    )
+    print(
+        json.dumps(
+            {"status": result["status"], "common_events": result["common_events"], "output": str(folder)},
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
     raise SystemExit(0 if result["status"] == "completed" else 1)

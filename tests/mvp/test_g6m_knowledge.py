@@ -9,8 +9,8 @@ from sklearn.feature_extraction.text import HashingVectorizer
 
 from copper_mvp.access import Principal
 from copper_mvp.common import WorkbenchError
-from copper_mvp.knowledge_contracts import DocumentSpec, DocumentAccess
-from copper_mvp.knowledge_parsing import parse_document, make_chunks
+from copper_mvp.knowledge_contracts import DocumentAccess, DocumentSpec
+from copper_mvp.knowledge_parsing import make_chunks, parse_document
 from copper_mvp.knowledge_store import KnowledgeStore
 
 OWNER = Principal("owner", "owner")
@@ -19,13 +19,13 @@ READER = Principal("reader", "viewer")
 
 class LifecycleEmbedding:
     """Deterministic test double for lifecycle tests; not a semantic quality benchmark."""
+
     signature = "synthetic-test-embedding-v1"
     dimension = 64
 
     def __init__(self):
         self.inputs = []
-        self.vectorizer = HashingVectorizer(n_features=64, analyzer="char", ngram_range=(1, 2),
-                                            alternate_sign=False)
+        self.vectorizer = HashingVectorizer(n_features=64, analyzer="char", ngram_range=(1, 2), alternate_sign=False)
 
     def encode(self, texts, *, query=False):
         self.inputs.extend(texts)
@@ -33,10 +33,21 @@ class LifecycleEmbedding:
 
 
 def spec(doc_id="procedure", version="v1", **overrides):
-    return DocumentSpec.model_validate({
-        "doc_id": doc_id, "title": "合成测试文档", "author": "test-author", "source": "synthetic fixture",
-        "authorization": "test only", "license": "synthetic", "version_label": version,
-        "format": "md", "effective_at": "2025-01-01T00:00:00Z", "readers": ["reader"], **overrides})
+    return DocumentSpec.model_validate(
+        {
+            "doc_id": doc_id,
+            "title": "合成测试文档",
+            "author": "test-author",
+            "source": "synthetic fixture",
+            "authorization": "test only",
+            "license": "synthetic",
+            "version_label": version,
+            "format": "md",
+            "effective_at": "2025-01-01T00:00:00Z",
+            "readers": ["reader"],
+            **overrides,
+        }
+    )
 
 
 def add(store, metadata=None, text="# 测试规程\n\n浓度单位为 g/L。"):
@@ -73,8 +84,11 @@ def test_version_activation_expiry_and_original_citation(tmp_path):
     store = KnowledgeStore(tmp_path, LifecycleEmbedding())
     add(store, text="旧版规程使用 g/L。")
     old = store.search(READER, "规程", "2025-03-01T00:00:00Z")["items"][0]
-    add(store, spec(version="v2", effective_at="2025-06-01T00:00:00Z",
-                    expires_at="2025-12-01T00:00:00Z"), "新版规程使用 mg/L。")
+    add(
+        store,
+        spec(version="v2", effective_at="2025-06-01T00:00:00Z", expires_at="2025-12-01T00:00:00Z"),
+        "新版规程使用 mg/L。",
+    )
     assert store.search(READER, "规程", "2025-03-01T00:00:00Z")["items"][0]["citation"]["version"] == 1
     assert store.search(READER, "规程", "2025-08-01T00:00:00Z")["items"][0]["citation"]["version"] == 2
     assert store.search(READER, "规程", "2026-01-01T00:00:00Z")["items"] == []
@@ -96,8 +110,10 @@ def test_failed_index_leaves_prior_version_queryable_and_file_immutable(tmp_path
     with pytest.raises(WorkbenchError):
         store.upload(OWNER, "procedure", 1, b"do not replace original")
     original = embedder.encode
+
     def failed(*args, **kwargs):
         raise RuntimeError("synthetic encoder interruption")
+
     embedder.encode = failed
     with pytest.raises(RuntimeError):
         store.build_index(OWNER, "procedure", 2)
@@ -126,7 +142,21 @@ def test_delete_removes_owned_original_chunks_vectors_and_keeps_only_tombstone(t
 
 
 def test_markdown_keeps_table_units_equation_definitions_and_source_spans():
-    text = "# 合成工艺\n\n| 指标 | 单位 |\n| --- | --- |\n| Cu | g/L |\n\n$$\nx = m / V\n$$\n\nm 为质量，V 为体积。\n\n![流程](diagram.png)\n"
+    text = (
+        "# 合成工艺\n"
+        "\n"
+        "| 指标 | 单位 |\n"
+        "| --- | --- |\n"
+        "| Cu | g/L |\n"
+        "\n"
+        "$$\n"
+        "x = m / V\n"
+        "$$\n"
+        "\n"
+        "m 为质量，V 为体积。\n"
+        "\n"
+        "![流程](diagram.png)\n"
+    )
     parsed = parse_document(text.encode(), "md")
     chunks = make_chunks(parsed["blocks"])
     table = next(v for v in chunks if v["kind"] == "table")
@@ -135,7 +165,7 @@ def test_markdown_keeps_table_units_equation_definitions_and_source_spans():
     assert "x = m / V" in equation["text"] and "m 为质量" in equation["text"]
     for item in parsed["blocks"]:
         loc = item["location"]
-        assert text[loc["char_start"]:loc["char_end"]].strip() == item["text"]
+        assert text[loc["char_start"] : loc["char_end"]].strip() == item["text"]
     image = next(v for v in parsed["blocks"] if v["kind"] == "image")
     assert not image["details"]["external_assets_fetched"]
 
@@ -150,13 +180,14 @@ def test_injection_remains_quoted_evidence_and_context_budget_is_preserved(tmp_p
     assert result["local_only"]
 
 
-
 def test_docx_retains_merged_table_and_inline_equation():
     from copper_mvp.knowledge_embedding import load_dependencies
+
     load_dependencies()
     pytest.importorskip("docx")
     from docx import Document
     from docx.oxml import parse_xml
+
     document = Document()
     document.add_heading("合成报告", 1)
     table = document.add_table(rows=3, cols=2)
@@ -166,7 +197,11 @@ def test_docx_retains_merged_table_and_inline_equation():
     table.cell(2, 0).text = "合成 A"
     table.cell(2, 1).text = "12"
     paragraph = document.add_paragraph("m 为质量，V 为体积。")
-    paragraph._p.append(parse_xml('<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x=m/V</m:t></m:r></m:oMath>'))
+    paragraph._p.append(
+        parse_xml(
+            '<m:oMath xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math"><m:r><m:t>x=m/V</m:t></m:r></m:oMath>'
+        )
+    )
     stream = io.BytesIO()
     document.save(stream)
     parsed = parse_document(stream.getvalue(), "docx")
@@ -180,9 +215,11 @@ def test_docx_retains_merged_table_and_inline_equation():
 
 def test_scanned_pdf_cannot_be_marked_indexed_without_ocr(tmp_path):
     from copper_mvp.knowledge_embedding import load_dependencies
+
     load_dependencies()
     pytest.importorskip("pypdf")
     from PIL import Image
+
     # An actual image-only PDF, not a mocked parser result.
     output = io.BytesIO()
     Image.new("RGB", (64, 64), (240, 240, 240)).save(output, format="PDF")
@@ -200,14 +237,20 @@ def test_scanned_pdf_cannot_be_marked_indexed_without_ocr(tmp_path):
 
 def test_parse_revision_keeps_active_index_until_new_review_and_build(tmp_path):
     from copper_mvp.knowledge_contracts import DocumentCorrections
+
     store = KnowledgeStore(tmp_path, LifecycleEmbedding())
     add(store, text="质量浓度使用 g/L。")
     before = store.inspect(OWNER, "procedure", 1)
     original = store.search(READER, "浓度")["items"][0]
-    correction = DocumentCorrections.model_validate({
-        "expected_parse_hash": before["parse_hash"], "note": "synthetic human correction",
-        "corrections": [{"block_id": 0, "regions": [
-            {"kind": "paragraph", "text": "质量浓度使用 g/L；单位换算需明确记录。"}]}]})
+    correction = DocumentCorrections.model_validate(
+        {
+            "expected_parse_hash": before["parse_hash"],
+            "note": "synthetic human correction",
+            "corrections": [
+                {"block_id": 0, "regions": [{"kind": "paragraph", "text": "质量浓度使用 g/L；单位换算需明确记录。"}]}
+            ],
+        }
+    )
     revised = store.processing.correct(OWNER, "procedure", 1, correction)
     assert revised["status"] == "needs_review"
     assert store.resolve(READER, original["citation"]["chunk_id"])["text"] == original["text"]
@@ -224,23 +267,30 @@ def test_parse_revision_keeps_active_index_until_new_review_and_build(tmp_path):
         store.resolve(READER, original["citation"]["chunk_id"])
     history = store.processing.history(OWNER, "procedure", 1)
     assert len(history) == 2
-    assert store.processing.historical_parse(OWNER, "procedure", 1, 1)["parsed"]["blocks"][0]["text"] == "质量浓度使用 g/L。"
+    assert (
+        store.processing.historical_parse(OWNER, "procedure", 1, 1)["parsed"]["blocks"][0]["text"]
+        == "质量浓度使用 g/L。"
+    )
 
 
 def test_document_revocation_during_ocr_prevents_publishing_result(tmp_path):
-    from copper_mvp.knowledge_parsing import block
     from copper_mvp.knowledge_embedding import load_dependencies
+    from copper_mvp.knowledge_parsing import block
+
     load_dependencies()
     pytest.importorskip("pypdf")
     from PIL import Image
+
     output = io.BytesIO()
     Image.new("RGB", (64, 64), "white").save(output, format="PDF")
     store = KnowledgeStore(tmp_path, LifecycleEmbedding())
     store.register(OWNER, spec(format="pdf"))
     row = store.upload(OWNER, "procedure", 1, output.getvalue())
+
     def recognise_then_revoke(payload, page, dpi):
         store.change_access(OWNER, "procedure", DocumentAccess(revoked=True))
         return block("ocr_page", "synthetic late result", {"page": page})
+
     store.processing.ocr.recognize = recognise_then_revoke
     with pytest.raises(WorkbenchError) as error:
         store.processing.run_ocr(OWNER, "procedure", 1, row["parse_hash"])
@@ -252,9 +302,16 @@ def test_document_revocation_during_ocr_prevents_publishing_result(tmp_path):
 
 def test_long_table_row_groups_retain_headers_units_and_footnotes():
     from copper_mvp.knowledge_parsing import block, token_count
+
     rows = [[f"sample-{i:03}", f"{i}.5", "g/L"] for i in range(100)]
-    table = block("table", "\n".join(" | ".join(row) for row in rows), {"page": 1},
-                  headers=["样本", "数值", "单位"], rows=rows, footnotes=["合成数据"])
+    table = block(
+        "table",
+        "\n".join(" | ".join(row) for row in rows),
+        {"page": 1},
+        headers=["样本", "数值", "单位"],
+        rows=rows,
+        footnotes=["合成数据"],
+    )
     table["block_id"] = 0
     chunks = make_chunks([table], target=100)
     assert len(chunks) > 1
@@ -273,12 +330,19 @@ def test_long_table_row_groups_retain_headers_units_and_footnotes():
 def test_reranker_only_receives_authorized_candidates_and_baseline_remains_available(tmp_path):
     class RankingProbe:
         cache_key = "synthetic-ranking-probe"
+
         def __init__(self):
             self.received = []
+
         def rank(self, query, passages):
             self.received.append(list(passages))
-            return {"scores": list(range(len(passages))), "pairs": len(passages),
-                    "truncated_pairs": 0, "model_signature": self.cache_key}
+            return {
+                "scores": list(range(len(passages))),
+                "pairs": len(passages),
+                "truncated_pairs": 0,
+                "model_signature": self.cache_key,
+            }
+
     ranker = RankingProbe()
     store = KnowledgeStore(tmp_path, LifecycleEmbedding(), reranker=ranker)
     add(store, text="第一条允许访问的说明。\n\n第二条允许访问的说明。")
@@ -294,7 +358,16 @@ def test_reranker_only_receives_authorized_candidates_and_baseline_remains_avail
 
 
 def test_markdown_lists_keep_individual_clause_locations():
-    text = "# 规则\n\n- 第一条：保留单位。\n- 第二条：重启后查询原命令账本。\n  不能直接重放发送。\n\n1. 检查版本。\n2. 检查权限。\n"
+    text = (
+        "# 规则\n"
+        "\n"
+        "- 第一条：保留单位。\n"
+        "- 第二条：重启后查询原命令账本。\n"
+        "  不能直接重放发送。\n"
+        "\n"
+        "1. 检查版本。\n"
+        "2. 检查权限。\n"
+    )
     parsed = parse_document(text.encode(), "md")
     items = [v for v in parsed["blocks"] if v["kind"] == "list_item"]
     assert len(items) == 4
@@ -302,7 +375,7 @@ def test_markdown_lists_keep_individual_clause_locations():
     assert items[1]["location"]["line_start"] == 4 and items[1]["location"]["line_end"] == 5
     for item in items:
         loc = item["location"]
-        assert text[loc["char_start"]:loc["char_end"]].strip() == item["text"]
+        assert text[loc["char_start"] : loc["char_end"]].strip() == item["text"]
 
 
 def test_reparse_requires_review_and_keeps_old_active_index(tmp_path):

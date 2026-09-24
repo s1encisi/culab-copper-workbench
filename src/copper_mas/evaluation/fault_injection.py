@@ -8,13 +8,14 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
+from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-import hashlib
-import math
 from time import perf_counter_ns
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError
 
@@ -24,7 +25,6 @@ from copper_mas.contracts.cards import ForecastRequestV2
 from copper_mas.data.leakage import FutureInformationError
 from copper_mas.llm.adapters import StructuredTask
 from copper_mas.llm.client import CallBudget, ExternalLLMCallsDisabled, call_structured
-
 
 DIRECT_SYSTEM = "direct_fixed_predictor"
 GUARDED_SYSTEM = "guarded_multi_agent_graph"
@@ -242,9 +242,9 @@ def build_fault_scenarios_v1() -> tuple[FaultScenarioV1, ...]:
     )
 
     future_available_request = deepcopy(request)
-    future_available_request["observations"]["observations"][0]["available_at"] = (
-        request["admission"]["decision_at"] + timedelta(hours=2)
-    )
+    future_available_request["observations"]["observations"][0]["available_at"] = request["admission"][
+        "decision_at"
+    ] + timedelta(hours=2)
     scenarios.append(
         make(
             "S02_AVAILABLE_AFTER_DECISION",
@@ -274,9 +274,7 @@ def build_fault_scenarios_v1() -> tuple[FaultScenarioV1, ...]:
 
     mismatch_request = deepcopy(request)
     mismatch_request["observations"]["origin_event_id"] = "different-origin-event"
-    mismatch_request["observations"]["decision_at"] = (
-        request["admission"]["decision_at"] + timedelta(minutes=1)
-    )
+    mismatch_request["observations"]["decision_at"] = request["admission"]["decision_at"] + timedelta(minutes=1)
     scenarios.append(
         make(
             "S04_ID_TIME_MISMATCH",
@@ -293,9 +291,7 @@ def build_fault_scenarios_v1() -> tuple[FaultScenarioV1, ...]:
     missing_stage34_request["admission"]["admission_status"] = "WARNING"
     missing_stage34_request["admission"]["feature_group_counts"]["stage34"] = 0
     missing_stage34_request["admission"]["missing_feature_groups"] = ("stage34",)
-    missing_stage34_request["admission"]["source_quality_warnings"] = (
-        "CORE_PROCESS_GROUP_LT_4_OF_7:stage34",
-    )
+    missing_stage34_request["admission"]["source_quality_warnings"] = ("CORE_PROCESS_GROUP_LT_4_OF_7:stage34",)
     scenarios.append(
         make(
             "S05_STAGE34_GROUP_MISSING",
@@ -401,10 +397,7 @@ def _verify_model_integrity(scenario: FaultScenarioV1) -> None:
         raise GuardBlocked("MODEL_MANIFEST_OR_HASH_MISMATCH")
     manifest = scenario.model_manifest
     actual_hash = hashlib.sha256(scenario.model_artifact).hexdigest()
-    if (
-        manifest.get("model_id") != manifest.get("expected_model_id")
-        or manifest.get("sha256") != actual_hash
-    ):
+    if manifest.get("model_id") != manifest.get("expected_model_id") or manifest.get("sha256") != actual_hash:
         raise GuardBlocked("MODEL_MANIFEST_OR_HASH_MISMATCH")
 
 
@@ -466,10 +459,7 @@ def _enforce_optional_boundaries(scenario: FaultScenarioV1) -> None:
 
 def _required_group_guard(request: ForecastRequestV2) -> None:
     admission = request.admission
-    if (
-        "stage34" in admission.missing_feature_groups
-        or admission.feature_group_counts.get("stage34", 0) <= 0
-    ):
+    if "stage34" in admission.missing_feature_groups or admission.feature_group_counts.get("stage34", 0) <= 0:
         raise GuardBlocked("REQUIRED_STAGE34_GROUP_MISSING", abstain=True)
 
 
@@ -493,9 +483,7 @@ def _classify_value_error(exc: ValueError) -> str:
     return "GUARD_VALUE_ERROR"
 
 
-def run_direct_fixed_predictor(
-    scenario: FaultScenarioV1, *, repeat_index: int
-) -> FaultRunResultV1:
+def run_direct_fixed_predictor(scenario: FaultScenarioV1, *, repeat_index: int) -> FaultRunResultV1:
     """有意不做合同/完整性检查的消融基线。"""
 
     started = perf_counter_ns()
@@ -517,9 +505,7 @@ def run_direct_fixed_predictor(
     )
 
 
-def run_guarded_multi_agent_graph(
-    scenario: FaultScenarioV1, *, repeat_index: int
-) -> FaultRunResultV1:
+def run_guarded_multi_agent_graph(scenario: FaultScenarioV1, *, repeat_index: int) -> FaultRunResultV1:
     """运行原始合同校验、外层防护和既有离线图，所有错误均 fail-closed。"""
 
     started = perf_counter_ns()
@@ -553,11 +539,7 @@ def run_guarded_multi_agent_graph(
     except FutureInformationError as exc:
         detected = True
         outcome = "BLOCKED"
-        reason_code = (
-            "AVAILABLE_AFTER_DECISION"
-            if "available_at" in str(exc)
-            else "FUTURE_INFORMATION_FORBIDDEN"
-        )
+        reason_code = "AVAILABLE_AFTER_DECISION" if "available_at" in str(exc) else "FUTURE_INFORMATION_FORBIDDEN"
     except ValidationError as exc:
         detected = True
         outcome = "BLOCKED"
@@ -603,13 +585,9 @@ def execute_fault_benchmark_v1(
             # 同一重复内交替执行次序，减小固定先后顺序对微秒级延迟的偏差。
             if repeat_index % 2:
                 results.append(run_direct_fixed_predictor(scenario, repeat_index=repeat_index))
-                results.append(
-                    run_guarded_multi_agent_graph(scenario, repeat_index=repeat_index)
-                )
+                results.append(run_guarded_multi_agent_graph(scenario, repeat_index=repeat_index))
             else:
-                results.append(
-                    run_guarded_multi_agent_graph(scenario, repeat_index=repeat_index)
-                )
+                results.append(run_guarded_multi_agent_graph(scenario, repeat_index=repeat_index))
                 results.append(run_direct_fixed_predictor(scenario, repeat_index=repeat_index))
     return scenarios, tuple(results)
 
@@ -638,9 +616,7 @@ def assert_benchmark_expectations(
             raise AssertionError(f"防护图错误拒绝正常对照: {row}")
 
 
-def clone_with_feature_row(
-    scenario: FaultScenarioV1, feature_row: Mapping[str, Any]
-) -> FaultScenarioV1:
+def clone_with_feature_row(scenario: FaultScenarioV1, feature_row: Mapping[str, Any]) -> FaultScenarioV1:
     """测试辅助函数：保留场景定义，仅替换特征行。"""
 
     return replace(scenario, feature_row=dict(feature_row))

@@ -9,7 +9,6 @@ import numpy as np
 
 from copper_mas.contracts.runtime import ResourceLedgerV1
 
-
 ArmName = Literal[
     "DETERMINISTIC_FIXED_WORKFLOW",
     "SINGLE_LLM_AGENT",
@@ -34,9 +33,7 @@ def summarize_arm_resources(outcomes: list[ArmRunOutcome]) -> dict[str, float | 
     arms = {item.arm for item in outcomes}
     if len(arms) != 1:
         raise ValueError("一次汇总只能包含一个实验臂")
-    latencies = np.asarray(
-        [item.resources.total_latency_ms for item in outcomes], dtype=float
-    )
+    latencies = np.asarray([item.resources.total_latency_ms for item in outcomes], dtype=float)
     count = len(outcomes)
     return {
         "arm": next(iter(arms)),
@@ -51,7 +48,5 @@ def summarize_arm_resources(outcomes: list[ArmRunOutcome]) -> dict[str, float | 
         "total_calls": sum(item.resources.total_calls for item in outcomes),
         "total_input_tokens": sum(item.resources.total_input_tokens for item in outcomes),
         "total_output_tokens": sum(item.resources.total_output_tokens for item in outcomes),
-        "total_estimated_cost_cny": sum(
-            item.resources.total_estimated_cost_cny for item in outcomes
-        ),
+        "total_estimated_cost_cny": sum(item.resources.total_estimated_cost_cny for item in outcomes),
     }

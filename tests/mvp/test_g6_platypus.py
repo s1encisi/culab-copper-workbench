@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -19,8 +20,13 @@ def mathematical():
 
 @pytest.mark.parametrize("budget", [128, 257])
 def test_platypus_methods_charge_clones_and_partial_batches_against_raw_ledger(tmp_path, budget):
-    request = OptimizerComparisonRequest(request_key="platypus", mode="benchmark", seeds=(17,), total_budget=budget,
-                                         optimizers=("NSGA-II",) + PLATYPUS_OPTIMIZERS)
+    request = OptimizerComparisonRequest(
+        request_key="platypus",
+        mode="benchmark",
+        seeds=(17,),
+        total_budget=budget,
+        optimizers=("NSGA-II",) + PLATYPUS_OPTIMIZERS,
+    )
     comparison = compare_optimizers(None, None, request, tmp_path)
     assert len({r["problem_signature"] for r in comparison["results"]}) == 1
     assert len({r["initial_population_hash"] for r in comparison["results"]}) == 1
@@ -31,8 +37,8 @@ def test_platypus_methods_charge_clones_and_partial_batches_against_raw_ledger(t
         assert len(frame) == run["total_evaluations"] <= budget
         X = frame[["x0", "x1"]].to_numpy()
         assert np.all((X >= 0) & (X <= 3))
-        np.testing.assert_allclose(frame[["f0", "f1"]], np.column_stack(((X*X).sum(1), ((X-2)**2).sum(1))))
-        np.testing.assert_allclose(frame.g0, X.sum(1)-3)
+        np.testing.assert_allclose(frame[["f0", "f1"]], np.column_stack(((X * X).sum(1), ((X - 2) ** 2).sum(1))))
+        np.testing.assert_allclose(frame.g0, X.sum(1) - 3)
         assert all(max(c["constraints"]) <= 1e-8 for c in run["candidates"])
 
 
@@ -68,8 +74,8 @@ def test_multiobjective_cma_distribution_responds_to_second_objective():
     for reverse in (False, True):
         prepared = mathematical()
         u = np.linspace(0, 1, 64)
-        X = 3 * np.column_stack((u, 1-u))
-        F = np.column_stack((np.zeros(64), 1-u if reverse else u))
+        X = 3 * np.column_stack((u, 1 - u))
+        F = np.column_stack((np.zeros(64), 1 - u if reverse else u))
         population = Population.new(X=X, F=F, G=-np.ones((64, 1)))
         evaluator = EvaluationService(prepared, 257)
         algorithm = PlatypusAdapter("MO-CMA-ES", population, [1, 3])

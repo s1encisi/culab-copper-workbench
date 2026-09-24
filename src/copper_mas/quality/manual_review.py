@@ -6,7 +6,6 @@ from typing import Any
 
 import pandas as pd
 
-
 TIME_COLUMN = "人工核对：时间和相邻关系是否合理"
 OPERATION_COLUMN = "人工核对：是否存在表外切槽/出铜/其他操作"
 MODE_COLUMN = "人工核对：工况判断是否合理"
@@ -71,7 +70,6 @@ def assess_manual_review(frame: pd.DataFrame) -> dict[str, Any]:
             "external_operation_present_or_uncertain": operation_flags,
         },
         "rule": (
-            "只有30条均完成，且时间=是、表外操作=无、工况=是时，"
-            "才自动达到COMPLETED_AND_ACCEPTED；其他情况需逐条裁决。"
+            "只有30条均完成，且时间=是、表外操作=无、工况=是时，才自动达到COMPLETED_AND_ACCEPTED；其他情况需逐条裁决。"
         ),
     }

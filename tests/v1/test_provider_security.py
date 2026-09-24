@@ -21,7 +21,6 @@ from copper_mas.llm.client import (
     call_structured,
 )
 
-
 CONFIG = Path(__file__).resolve().parents[2] / "configs/llm/providers.yaml"
 
 
@@ -199,9 +198,7 @@ def test_client_validates_mock_response_and_enforces_call_budget():
     assert result.value.status == "ok"
     assert result.input_tokens == 10
     assert result.output_tokens == 2
-    assert result.estimated_cost_cny == pytest.approx(
-        (10 * 9.9 + 2 * 29.7) / 1_000_000
-    )
+    assert result.estimated_cost_cny == pytest.approx((10 * 9.9 + 2 * 29.7) / 1_000_000)
     assert result.cost_status == "ESTIMATED_FROM_REPORTED_TOKENS"
     with pytest.raises(ExternalLLMBudgetExceeded):
         call_structured(
@@ -216,9 +213,7 @@ def test_client_validates_mock_response_and_enforces_call_budget():
 def test_local_env_loader_returns_names_only_and_budget_overrides(tmp_path: Path):
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "KIMI_API_KEY=local-secret-value\n"
-        "COPPER_MAS_MAX_CALLS_PER_RUN=3\n"
-        "COPPER_MAS_MONTHLY_CNY_LIMIT=20\n",
+        "KIMI_API_KEY=local-secret-value\nCOPPER_MAS_MAX_CALLS_PER_RUN=3\nCOPPER_MAS_MONTHLY_CNY_LIMIT=20\n",
         encoding="utf-8",
     )
     environ: dict[str, str] = {}
@@ -238,8 +233,7 @@ def test_local_env_loader_returns_names_only_and_budget_overrides(tmp_path: Path
 def test_shared_env_loader_can_ignore_unrelated_provider_variables(tmp_path: Path):
     env_file = tmp_path / ".env"
     env_file.write_text(
-        "UNRELATED_API_KEY=must-not-load\n"
-        "KIMI_API_KEY=allowed-local-value\n",
+        "UNRELATED_API_KEY=must-not-load\nKIMI_API_KEY=allowed-local-value\n",
         encoding="utf-8",
     )
     environ: dict[str, str] = {}

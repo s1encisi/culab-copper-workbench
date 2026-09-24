@@ -30,9 +30,7 @@ def test_infer_process_mode_uses_latest_available_state() -> None:
         feature_row=row,
     )
 
-    assert card.mode_code == (
-        "P1_STAGE12_ON__P2_STAGE12_OFF__S3_ON__S4_OFF"
-    )
+    assert card.mode_code == ("P1_STAGE12_ON__P2_STAGE12_OFF__S3_ON__S4_OFF")
     assert "stage3_current_a__t_minus_2h" in card.evidence_observation_ids
     assert card.confidence == 1.0
 

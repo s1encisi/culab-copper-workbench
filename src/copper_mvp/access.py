@@ -1,16 +1,20 @@
 """Local access keys and browser sessions; credentials stay out of model context."""
+
 from __future__ import annotations
 
-from dataclasses import dataclass
 import hashlib
 import secrets
 import time
+from dataclasses import dataclass
 
 from copper_mvp.common import WorkbenchError
 
 PROJECT = "copper-research"
-PERMISSIONS = {"owner": {"read", "compute", "approve", "manage", "mock_control"},
-               "researcher": {"read", "compute"}, "viewer": {"read"}}
+PERMISSIONS = {
+    "owner": {"read", "compute", "approve", "manage", "mock_control"},
+    "researcher": {"read", "compute"},
+    "viewer": {"read"},
+}
 
 
 @dataclass(frozen=True)
@@ -49,7 +53,9 @@ class AccessControl:
             with self.owner_key_path.open("x", encoding="utf-8") as stream:
                 stream.write(key + "\n")
         with store.connection() as c:
-            c.execute("INSERT OR IGNORE INTO access_keys VALUES(?,?,?,?,0)", (token_hash(key), "owner", "owner", PROJECT))
+            c.execute(
+                "INSERT OR IGNORE INTO access_keys VALUES(?,?,?,?,0)", (token_hash(key), "owner", "owner", PROJECT)
+            )
 
     def authenticate(self, key=None, cookie=None):
         hashed = token_hash(key or cookie or "")
@@ -57,14 +63,19 @@ class AccessControl:
             if key:
                 row = c.execute("SELECT * FROM access_keys WHERE token_hash=? AND revoked=0", (hashed,)).fetchone()
             else:
-                row = c.execute("""SELECT k.* FROM browser_sessions s JOIN access_keys k ON k.token_hash=s.key_hash
-                                   WHERE s.token_hash=? AND s.expires_at>? AND k.revoked=0""", (hashed, time.time())).fetchone()
+                row = c.execute(
+                    """SELECT k.* FROM browser_sessions s JOIN access_keys k ON k.token_hash=s.key_hash
+                                   WHERE s.token_hash=? AND s.expires_at>? AND k.revoked=0""",
+                    (hashed, time.time()),
+                ).fetchone()
         return Principal(row["user_id"], row["role"], row["project_id"], row["token_hash"]) if row else None
 
     def current(self, key_hash, user_id, role):
         with self.store.connection() as c:
-            row = c.execute("SELECT * FROM access_keys WHERE token_hash=? AND user_id=? AND role=? AND revoked=0",
-                            (key_hash, user_id, role)).fetchone()
+            row = c.execute(
+                "SELECT * FROM access_keys WHERE token_hash=? AND user_id=? AND role=? AND revoked=0",
+                (key_hash, user_id, role),
+            ).fetchone()
         if not row:
             raise WorkbenchError("任务发起账号的授权已失效", "FORBIDDEN")
         return Principal(row["user_id"], row["role"], row["project_id"], row["token_hash"])
@@ -75,8 +86,10 @@ class AccessControl:
             raise WorkbenchError("本机访问码无效", "UNAUTHENTICATED")
         cookie = secrets.token_urlsafe(32)
         with self.store.connection() as c:
-            c.execute("INSERT INTO browser_sessions VALUES(?,?,?)",
-                      (token_hash(cookie), token_hash(key), time.time() + 30 * 86400))
+            c.execute(
+                "INSERT INTO browser_sessions VALUES(?,?,?)",
+                (token_hash(cookie), token_hash(key), time.time() + 30 * 86400),
+            )
         return principal, cookie
 
     def logout(self, cookie):

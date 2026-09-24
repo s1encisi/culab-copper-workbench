@@ -1,17 +1,16 @@
 param([string]$Python = 'python', [string]$Npm = 'npm')
 $ErrorActionPreference = 'Stop'
 $mvpProject = Split-Path -Parent $PSScriptRoot
-$mvpWorkspace = Split-Path -Parent $mvpProject
-$mvpEnv = Join-Path $mvpWorkspace '.analysis_work\venvs\copper-mvp'
+$mvpEnv = Join-Path $mvpProject '.venv'
 $mvpPython = Join-Path $mvpEnv 'Scripts\python.exe'
 if (-not (Test-Path -LiteralPath $mvpPython)) {
-    & $Python -c 'import sys; assert sys.version_info[:2] == (3,11), "需要 Python 3.11"'
+    & $Python -B -c 'import sys; assert sys.version_info[:2] == (3,11), "需要 Python 3.11"'
     if ($LASTEXITCODE -ne 0) { throw 'Python 版本不匹配' }
-    & $Python -m venv $mvpEnv
+    & $Python -B -m venv $mvpEnv
     if ($LASTEXITCODE -ne 0) { throw '虚拟环境创建失败' }
+    & $mvpPython -B -m pip --isolated install --no-cache-dir --no-compile --index-url https://pypi.org/simple -r (Join-Path $mvpProject 'requirements-mvp-lock.txt')
+    if ($LASTEXITCODE -ne 0) { throw 'Python 依赖安装失败' }
 }
-& $mvpPython -m pip --isolated install --index-url https://pypi.org/simple -r (Join-Path $mvpProject 'requirements-mvp-lock.txt')
-if ($LASTEXITCODE -ne 0) { throw 'Python 依赖安装失败' }
 Push-Location (Join-Path $mvpProject 'web')
 try {
     & $Npm ci --no-audit --no-fund
